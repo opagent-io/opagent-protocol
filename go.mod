@@ -1,4 +1,4 @@
-module github.com/modelcontextprotocol/go-sdk
+module github.com/opagent-io/agent-protocol
 
 go 1.23.0
 
