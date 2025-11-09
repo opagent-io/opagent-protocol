@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/opagent-io/agent-protocol/auth"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 const (

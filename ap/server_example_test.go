@@ -2,7 +2,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
-package ap
+package ap_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opagent-io/agent-protocol/mcp"
 )
 
 // !+prompts

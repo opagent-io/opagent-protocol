@@ -647,7 +647,7 @@ type ProgressNotificationParams struct {
 	// this notification with the request that is proceeding.
 	ProgressToken any `json:"progressToken"`
 	// An optional message describing the current progress.
-	Message string `json:"message,omitempty"`
+	Message json.RawMessage `json:"message,omitempty"`
 	// The progress thus far. This should increase every time progress is made, even
 	// if the total is unknown.
 	Progress float64 `json:"progress"`

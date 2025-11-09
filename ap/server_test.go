@@ -237,53 +237,53 @@ func TestServerCapabilities(t *testing.T) {
 	tool := &Tool{Name: "t", InputSchema: &jsonschema.Schema{Type: "object"}}
 	testCases := []struct {
 		name             string
-		configureServer  func(s *Server)
-		serverOpts       ServerOptions
-		wantCapabilities *ServerCapabilities
+		configureServer  func(s *Agent)
+		serverOpts       AgentOptions
+		wantCapabilities *AgentCapabilities
 	}{
 		{
 			name:            "No capabilities",
-			configureServer: func(s *Server) {},
-			wantCapabilities: &ServerCapabilities{
+			configureServer: func(s *Agent) {},
+			wantCapabilities: &AgentCapabilities{
 				Logging: &LoggingCapabilities{},
 			},
 		},
 		{
 			name: "With prompts",
-			configureServer: func(s *Server) {
+			configureServer: func(s *Agent) {
 				s.AddPrompt(&Prompt{Name: "p"}, nil)
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Logging: &LoggingCapabilities{},
 				Prompts: &PromptCapabilities{ListChanged: true},
 			},
 		},
 		{
 			name: "With resources",
-			configureServer: func(s *Server) {
+			configureServer: func(s *Agent) {
 				s.AddResource(&Resource{URI: "file:///r"}, nil)
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Logging:   &LoggingCapabilities{},
 				Resources: &ResourceCapabilities{ListChanged: true},
 			},
 		},
 		{
 			name: "With resource templates",
-			configureServer: func(s *Server) {
+			configureServer: func(s *Agent) {
 				s.AddResourceTemplate(&ResourceTemplate{URITemplate: "file:///rt"}, nil)
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Logging:   &LoggingCapabilities{},
 				Resources: &ResourceCapabilities{ListChanged: true},
 			},
 		},
 		{
 			name: "With resource subscriptions",
-			configureServer: func(s *Server) {
+			configureServer: func(s *Agent) {
 				s.AddResourceTemplate(&ResourceTemplate{URITemplate: "file:///rt"}, nil)
 			},
-			serverOpts: ServerOptions{
+			serverOpts: AgentOptions{
 				SubscribeHandler: func(context.Context, *SubscribeRequest) error {
 					return nil
 				},
@@ -291,43 +291,43 @@ func TestServerCapabilities(t *testing.T) {
 					return nil
 				},
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Logging:   &LoggingCapabilities{},
 				Resources: &ResourceCapabilities{ListChanged: true, Subscribe: true},
 			},
 		},
 		{
 			name: "With tools",
-			configureServer: func(s *Server) {
+			configureServer: func(s *Agent) {
 				s.AddTool(tool, nil)
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Logging: &LoggingCapabilities{},
 				Tools:   &ToolCapabilities{ListChanged: true},
 			},
 		},
 		{
 			name:            "With completions",
-			configureServer: func(s *Server) {},
-			serverOpts: ServerOptions{
+			configureServer: func(s *Agent) {},
+			serverOpts: AgentOptions{
 				CompletionHandler: func(context.Context, *CompleteRequest) (*CompleteResult, error) {
 					return nil, nil
 				},
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Logging:     &LoggingCapabilities{},
 				Completions: &CompletionCapabilities{},
 			},
 		},
 		{
 			name: "With all capabilities",
-			configureServer: func(s *Server) {
+			configureServer: func(s *Agent) {
 				s.AddPrompt(&Prompt{Name: "p"}, nil)
 				s.AddResource(&Resource{URI: "file:///r"}, nil)
 				s.AddResourceTemplate(&ResourceTemplate{URITemplate: "file:///rt"}, nil)
 				s.AddTool(tool, nil)
 			},
-			serverOpts: ServerOptions{
+			serverOpts: AgentOptions{
 				SubscribeHandler: func(context.Context, *SubscribeRequest) error {
 					return nil
 				},
@@ -338,7 +338,7 @@ func TestServerCapabilities(t *testing.T) {
 					return nil, nil
 				},
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Completions: &CompletionCapabilities{},
 				Logging:     &LoggingCapabilities{},
 				Prompts:     &PromptCapabilities{ListChanged: true},
@@ -348,13 +348,13 @@ func TestServerCapabilities(t *testing.T) {
 		},
 		{
 			name:            "With initial capabilities",
-			configureServer: func(s *Server) {},
-			serverOpts: ServerOptions{
+			configureServer: func(s *Agent) {},
+			serverOpts: AgentOptions{
 				HasPrompts:   true,
 				HasResources: true,
 				HasTools:     true,
 			},
-			wantCapabilities: &ServerCapabilities{
+			wantCapabilities: &AgentCapabilities{
 				Logging:   &LoggingCapabilities{},
 				Prompts:   &PromptCapabilities{ListChanged: true},
 				Resources: &ResourceCapabilities{ListChanged: true},
@@ -365,7 +365,7 @@ func TestServerCapabilities(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := NewServer(testImpl, &tc.serverOpts)
+			server := NewAgent(testImpl, &tc.serverOpts)
 			tc.configureServer(server)
 			gotCapabilities := server.capabilities()
 			if diff := cmp.Diff(tc.wantCapabilities, gotCapabilities); diff != "" {
@@ -403,7 +403,7 @@ func TestServerAddResourceTemplate(t *testing.T) {
 				}
 			}()
 
-			s := NewServer(testImpl, nil)
+			s := NewAgent(testImpl, nil)
 			s.AddResourceTemplate(&rt, nil)
 		})
 	}
@@ -415,8 +415,8 @@ func TestServerSessionkeepaliveCancelOverwritten(t *testing.T) {
 	// Set KeepAlive to a long duration to ensure the keepalive
 	// goroutine stays alive for the duration of the test without actually sending
 	// ping requests, since we don't have a real client connection established.
-	server := NewServer(testImpl, &ServerOptions{KeepAlive: 5 * time.Second})
-	ss := &ServerSession{server: server}
+	server := NewAgent(testImpl, &AgentOptions{KeepAlive: 5 * time.Second})
+	ss := &AgentSession{agent: server}
 
 	// 1. Initialize the session.
 	_, err := ss.initialize(context.Background(), &InitializeParams{})
@@ -468,7 +468,7 @@ func panics(f func()) (b bool) {
 
 func TestAddTool(t *testing.T) {
 	// AddTool should panic if In or Out are not JSON objects.
-	s := NewServer(testImpl, nil)
+	s := NewAgent(testImpl, nil)
 	if !panics(func() {
 		AddTool(s, &Tool{Name: "T1"}, func(context.Context, *CallToolRequest, string) (*CallToolResult, any, error) { return nil, nil, nil })
 	}) {

@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 // A Client is an MCP client, which may be connected to an MCP server
@@ -56,11 +56,18 @@ func NewClient(impl *Implementation, opts *ClientOptions) *Client {
 
 // ClientOptions configures the behavior of the client.
 type ClientOptions struct {
+	// OpHostHandler handles incoming requests for opHost.
+	//
+	// Setting OpHostHandler to a non-nil value causes the client to
+	// advertise the opHost capability.
+	OpHostHandler func(context.Context, *OpHostRequest) (*OpHostResult, error)
 	// CreateMessageHandler handles incoming requests for sampling/createMessage.
 	//
 	// Setting CreateMessageHandler to a non-nil value causes the client to
 	// advertise the sampling capability.
 	CreateMessageHandler func(context.Context, *CreateMessageRequest) (*CreateMessageResult, error)
+	// CallAgentWithLoopHandler handles incoming requests for callAgentWithLoop.
+	// CreateMessageHandler func(context.Context, *CallAgentRequest) (*CreateMessageResult, error)
 	// ElicitationHandler handles incoming requests for elicitation/create.
 	//
 	// Setting ElicitationHandler to a non-nil value causes the client to
@@ -295,6 +302,14 @@ func (c *Client) createMessage(ctx context.Context, req *CreateMessageRequest) (
 	return c.opts.CreateMessageHandler(ctx, req)
 }
 
+func (c *Client) opHost(ctx context.Context, req *OpHostRequest) (*OpHostResult, error) {
+	if c.opts.OpHostHandler == nil {
+		// TODO: wrap or annotate this error? Pick a standard code?
+		return nil, jsonrpc2.NewError(codeUnsupportedMethod, "client does not support OpHost")
+	}
+	return c.opts.OpHostHandler(ctx, req)
+}
+
 func (c *Client) elicit(ctx context.Context, req *ElicitRequest) (*ElicitResult, error) {
 	if c.opts.ElicitationHandler == nil {
 		// TODO: wrap or annotate this error? Pick a standard code?
@@ -503,6 +518,7 @@ func (c *Client) AddReceivingMiddleware(middleware ...Middleware) {
 // curating these method flags.
 var clientMethodInfos = map[string]methodInfo{
 	methodComplete:                  newClientMethodInfo(clientSessionMethod((*ClientSession).Complete), 0),
+	methodOpHost:                    newClientMethodInfo(clientMethod((*Client).opHost), 0),
 	methodPing:                      newClientMethodInfo(clientSessionMethod((*ClientSession).ping), missingParamsOK),
 	methodListRoots:                 newClientMethodInfo(clientMethod((*Client).listRoots), missingParamsOK),
 	methodCreateMessage:             newClientMethodInfo(clientMethod((*Client).createMessage), 0),
@@ -517,7 +533,7 @@ var clientMethodInfos = map[string]methodInfo{
 }
 
 func (cs *ClientSession) sendingMethodInfos() map[string]methodInfo {
-	return serverMethodInfos
+	return agentMethodInfos
 }
 
 func (cs *ClientSession) receivingMethodInfos() map[string]methodInfo {
@@ -582,6 +598,20 @@ func (cs *ClientSession) GetPrompt(ctx context.Context, params *GetPromptParams)
 // ListTools lists tools that are currently available on the server.
 func (cs *ClientSession) ListTools(ctx context.Context, params *ListToolsParams) (*ListToolsResult, error) {
 	return handleSend[*ListToolsResult](ctx, methodListTools, newClientRequest(cs, orZero[Params](params)))
+}
+
+// CallAgentOperation requests an op from the server.
+//
+// The params.Arguments can be any value that marshals into a JSON object.
+func (cs *ClientSession) OpAgent(ctx context.Context, params *OpAgentParams) (*OpAgentResult, error) {
+	if params == nil {
+		params = new(OpAgentParams)
+	}
+	if params.Messages == nil {
+		// Avoid sending nil over the wire.
+		params.Messages = nil
+	}
+	return handleSend[*OpAgentResult](ctx, methodOpAgent, newClientRequest(cs, orZero[Params](params)))
 }
 
 // CallTool calls the tool with the given parameters.

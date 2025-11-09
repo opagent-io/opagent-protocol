@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 func TestBatchFraming(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opagent-io/agent-protocol/mcp"
 )
 
 func TestContent(t *testing.T) {

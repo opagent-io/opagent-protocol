@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 // A Client is an MCP client, which may be connected to an MCP server

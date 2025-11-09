@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opagent-io/agent-protocol/mcp"
 )
 
 func ExampleServer_AddTool_rawSchema() {

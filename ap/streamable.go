@@ -23,9 +23,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/auth"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/auth"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 //
 // [MCP spec]: https://modelcontextprotocol.io/2025/03/26/streamable-http-transport.html
 type StreamableHTTPHandler struct {
-	getServer func(*http.Request) *Server
+	getServer func(*http.Request) *Agent
 	opts      StreamableHTTPOptions
 
 	onTransportDeletion func(sessionID string) // for testing
@@ -48,7 +48,7 @@ type StreamableHTTPHandler struct {
 }
 
 type sessionInfo struct {
-	session   *ServerSession
+	session   *AgentSession
 	transport *StreamableServerTransport
 
 	// If timeout is set, automatically close the session after an idle period.
@@ -157,7 +157,7 @@ type StreamableHTTPOptions struct {
 // The getServer function is used to create or look up servers for new
 // sessions. It is OK for getServer to return the same server multiple times.
 // If getServer returns nil, a 400 Bad Request will be served.
-func NewStreamableHTTPHandler(getServer func(*http.Request) *Server, opts *StreamableHTTPOptions) *StreamableHTTPHandler {
+func NewStreamableHTTPHandler(getServer func(*http.Request) *Agent, opts *StreamableHTTPOptions) *StreamableHTTPHandler {
 	h := &StreamableHTTPHandler{
 		getServer: getServer,
 		sessions:  make(map[string]*sessionInfo),
@@ -329,7 +329,7 @@ func (h *StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Reque
 		stateless := h.opts.Stateless || sessionID == ""
 		// To support stateless mode, we initialize the session with a default
 		// state, so that it doesn't reject subsequent requests.
-		var connectOpts *ServerSessionOptions
+		var connectOpts *AgentSessionOptions
 		if stateless {
 			// Peek at the body to see if it is initialize or initialized.
 			// We want those to be handled as usual.
@@ -364,7 +364,7 @@ func (h *StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Reque
 
 			// If we don't have InitializeParams or InitializedParams in the request,
 			// set the initial state to a default value.
-			state := new(ServerSessionState)
+			state := new(AgentSessionState)
 			if !hasInitialize {
 				state.InitializeParams = &InitializeParams{
 					ProtocolVersion: protocolVersion,
@@ -374,13 +374,13 @@ func (h *StreamableHTTPHandler) ServeHTTP(w http.ResponseWriter, req *http.Reque
 				state.InitializedParams = new(InitializedParams)
 			}
 			state.LogLevel = "info"
-			connectOpts = &ServerSessionOptions{
+			connectOpts = &AgentSessionOptions{
 				State: state,
 			}
 		} else {
 			// Cleanup is only required in stateful mode, as transportation is
 			// not stored in the map otherwise.
-			connectOpts = &ServerSessionOptions{
+			connectOpts = &AgentSessionOptions{
 				onClose: func() {
 					h.mu.Lock()
 					defer h.mu.Unlock()
@@ -901,7 +901,7 @@ func (c *streamableServerConn) servePOST(w http.ResponseWriter, req *http.Reques
 			// Preemptively check that this is a valid request, so that we can fail
 			// the HTTP request. If we didn't do this, a request with a bad method or
 			// missing ID could be silently swallowed.
-			if _, err := checkRequest(jreq, serverMethodInfos); err != nil {
+			if _, err := checkRequest(jreq, agentMethodInfos); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}

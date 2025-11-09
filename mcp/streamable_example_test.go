@@ -13,7 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opagent-io/agent-protocol/mcp"
 )
 
 // !+streamablehandler

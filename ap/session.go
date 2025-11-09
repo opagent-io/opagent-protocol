@@ -15,7 +15,7 @@ type hasSessionID interface {
 }
 
 // ServerSessionState is the state of a session.
-type ServerSessionState struct {
+type AgentSessionState struct {
 	// InitializeParams are the parameters from 'initialize'.
 	InitializeParams *InitializeParams `json:"initializeParams"`
 

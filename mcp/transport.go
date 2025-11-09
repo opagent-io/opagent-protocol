@@ -17,7 +17,7 @@ import (
 
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
 	"github.com/opagent-io/agent-protocol/internal/xcontext"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 // ErrConnectionClosed is returned when sending a message to a connection that

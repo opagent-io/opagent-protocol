@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 type streamableRequestKey struct {

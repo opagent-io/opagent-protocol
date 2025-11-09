@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
 	"github.com/opagent-io/agent-protocol/internal/util"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 	"github.com/yosida95/uritemplate/v3"
 )
 
@@ -36,24 +36,24 @@ const DefaultPageSize = 1000
 //
 // Servers expose server-side MCP features, which can serve one or more MCP
 // sessions by using [Server.Run].
-type Server struct {
+type Agent struct {
 	// fixed at creation
-	impl *Implementation
-	opts ServerOptions
-
+	impl                    *Implementation
+	opts                    AgentOptions
 	mu                      sync.Mutex
-	prompts                 *featureSet[*serverPrompt]
-	tools                   *featureSet[*serverTool]
-	resources               *featureSet[*serverResource]
-	resourceTemplates       *featureSet[*serverResourceTemplate]
-	sessions                []*ServerSession
+	prompts                 *featureSet[*agentPrompt]
+	tools                   *featureSet[*agentTool]
+	ops                     *featureSet[*opAgentOps]
+	resources               *featureSet[*agentResource]
+	resourceTemplates       *featureSet[*agentResourceTemplate]
+	sessions                []*AgentSession
 	sendingMethodHandler_   MethodHandler
 	receivingMethodHandler_ MethodHandler
-	resourceSubscriptions   map[string]map[*ServerSession]bool // uri -> session -> bool
+	resourceSubscriptions   map[string]map[*AgentSession]bool // uri -> session -> bool
 }
 
 // ServerOptions is used to configure behavior of the server.
-type ServerOptions struct {
+type AgentOptions struct {
 	// Optional instructions for connected clients.
 	Instructions string
 	// If non-nil, log server activity.
@@ -108,11 +108,11 @@ type ServerOptions struct {
 // The first argument must not be nil.
 //
 // If non-nil, the provided options are used to configure the server.
-func NewServer(impl *Implementation, options *ServerOptions) *Server {
+func NewAgent(impl *Implementation, options *AgentOptions) *Agent {
 	if impl == nil {
 		panic("nil Implementation")
 	}
-	var opts ServerOptions
+	var opts AgentOptions
 	if options != nil {
 		opts = *options
 	}
@@ -138,32 +138,49 @@ func NewServer(impl *Implementation, options *ServerOptions) *Server {
 		opts.Logger = ensureLogger(nil)
 	}
 
-	return &Server{
+	return &Agent{
 		impl:                    impl,
 		opts:                    opts,
-		prompts:                 newFeatureSet(func(p *serverPrompt) string { return p.prompt.Name }),
-		tools:                   newFeatureSet(func(t *serverTool) string { return t.tool.Name }),
-		resources:               newFeatureSet(func(r *serverResource) string { return r.resource.URI }),
-		resourceTemplates:       newFeatureSet(func(t *serverResourceTemplate) string { return t.resourceTemplate.URITemplate }),
-		sendingMethodHandler_:   defaultSendingMethodHandler[*ServerSession],
-		receivingMethodHandler_: defaultReceivingMethodHandler[*ServerSession],
-		resourceSubscriptions:   make(map[string]map[*ServerSession]bool),
+		prompts:                 newFeatureSet(func(p *agentPrompt) string { return p.prompt.Name }),
+		tools:                   newFeatureSet(func(t *agentTool) string { return t.tool.Name }),
+		ops:                     newFeatureSet(func(o *opAgentOps) string { return o.op.Code.String() }),
+		resources:               newFeatureSet(func(r *agentResource) string { return r.resource.URI }),
+		resourceTemplates:       newFeatureSet(func(t *agentResourceTemplate) string { return t.resourceTemplate.URITemplate }),
+		sendingMethodHandler_:   defaultSendingMethodHandler[*AgentSession],
+		receivingMethodHandler_: defaultReceivingMethodHandler[*AgentSession],
+		resourceSubscriptions:   make(map[string]map[*AgentSession]bool),
 	}
 }
 
+// agent
+// func (ss *ServerSession) GenerateWithLoop(ctx context.Context, params *CallAgentMessageParams) (*CreateMessageResult, error) {
+// 	if err := ss.checkInitialized(methodCallAgentMessage); err != nil {
+// 		return nil, err
+// 	}
+// 	if params == nil {
+// 		params = &CallAgentMessageParams{Messages: []*CallAgentMessage{}}
+// 	}
+// 	if params.Messages == nil {
+// 		p2 := *params
+// 		p2.Messages = []*CallAgentMessage{} // avoid JSON "null"
+// 		params = &p2
+// 	}
+// 	return handleSend[*CreateMessageResult](ctx, methodCallAgentMessage, newServerRequest(ss, orZero[Params](params)))
+// }
+
 // AddPrompt adds a [Prompt] to the server, or replaces one with the same name.
-func (s *Server) AddPrompt(p *Prompt, h PromptHandler) {
+func (s *Agent) AddPrompt(p *Prompt, h PromptHandler) {
 	// Assume there was a change, since add replaces existing items.
 	// (It's possible an item was replaced with an identical one, but not worth checking.)
 	s.changeAndNotify(
 		notificationPromptListChanged,
 		&PromptListChangedParams{},
-		func() bool { s.prompts.add(&serverPrompt{p, h}); return true })
+		func() bool { s.prompts.add(&agentPrompt{p, h}); return true })
 }
 
 // RemovePrompts removes the prompts with the given names.
 // It is not an error to remove a nonexistent prompt.
-func (s *Server) RemovePrompts(names ...string) {
+func (s *Agent) RemovePrompts(names ...string) {
 	s.changeAndNotify(notificationPromptListChanged, &PromptListChangedParams{},
 		func() bool { return s.prompts.remove(names...) })
 }
@@ -190,7 +207,7 @@ func (s *Server) RemovePrompts(names ...string) {
 //
 // Most users should use the top-level function [AddTool], which handles all these
 // responsibilities.
-func (s *Server) AddTool(t *Tool, h ToolHandler) {
+func (s *Agent) AddTool(t *Tool, h ToolHandler) {
 	if t.InputSchema == nil {
 		// This prevents the tool author from forgetting to write a schema where
 		// one should be provided. If we papered over this by supplying the empty
@@ -226,7 +243,7 @@ func (s *Server) AddTool(t *Tool, h ToolHandler) {
 			}
 		}
 	}
-	st := &serverTool{tool: t, handler: h}
+	st := &agentTool{tool: t, handler: h}
 	// Assume there was a change, since add replaces existing tools.
 	// (It's possible a tool was replaced with an identical one, but not worth checking.)
 	// TODO: Batch these changes by size and time? The typescript SDK doesn't.
@@ -234,6 +251,96 @@ func (s *Server) AddTool(t *Tool, h ToolHandler) {
 	s.changeAndNotify(notificationToolListChanged, &ToolListChangedParams{},
 		func() bool { s.tools.add(st); return true })
 }
+
+func (a *Agent) AddOp(o *OP, h OpAgentHandler) {
+	if o.InputSchema == nil {
+		// This prevents the tool author from forgetting to write a schema where
+		// one should be provided. If we papered over this by supplying the empty
+		// schema, then every input would be validated and the problem wouldn't be
+		// discovered until runtime, when the LLM sent bad data.
+		panic(fmt.Errorf("AddTool %q: missing input schema", o.Name))
+	}
+	if s, ok := o.InputSchema.(*jsonschema.Schema); ok {
+		if s.Type != "object" {
+			panic(fmt.Errorf(`AddTool %q: input schema must have type "object"`, o.Name))
+		}
+	} else {
+		var m map[string]any
+		if err := remarshal(o.InputSchema, &m); err != nil {
+			panic(fmt.Errorf("AddTool %q: can't marshal input schema to a JSON object: %v", o.Name, err))
+		}
+		if typ := m["type"]; typ != "object" {
+			panic(fmt.Errorf(`AddTool %q: input schema must have type "object" (got %v)`, o.Name, typ))
+		}
+	}
+	if o.OutputSchema != nil {
+		if s, ok := o.OutputSchema.(*jsonschema.Schema); ok {
+			if s.Type != "object" {
+				panic(fmt.Errorf(`AddTool %q: output schema must have type "object"`, o.Name))
+			}
+		} else {
+			var m map[string]any
+			if err := remarshal(o.OutputSchema, &m); err != nil {
+				panic(fmt.Errorf("AddTool %q: can't marshal output schema to a JSON object: %v", o.Name, err))
+			}
+			if typ := m["type"]; typ != "object" {
+				panic(fmt.Errorf(`AddTool %q: output schema must have type "object" (got %v)`, o.Name, typ))
+			}
+		}
+	}
+	st := &opAgentOps{op: o, handler: h}
+	// Assume there was a change, since add replaces existing tools.
+	// (It's possible a tool was replaced with an identical one, but not worth checking.)
+	// TODO: Batch these changes by size and time? The typescript SDK doesn't.
+	// TODO: Surface notify error here? best not, in case we need to batch.
+	a.changeAndNotify(notificationOpListChanged, &OpListChangedParams{},
+		func() bool { a.ops.add(st); return true })
+}
+
+// func (s *Agent) AddAgent(a *Agent, h AgentHandler) {
+// 	if a.InputSchema == nil {
+// 		// This prevents the tool author from forgetting to write a schema where
+// 		// one should be provided. If we papered over this by supplying the empty
+// 		// schema, then every input would be validated and the problem wouldn't be
+// 		// discovered until runtime, when the LLM sent bad data.
+// 		panic(fmt.Errorf("AddAgent %q: missing input schema", a.Name))
+// 	}
+// 	if s, ok := a.InputSchema.(*jsonschema.Schema); ok {
+// 		if s.Type != "object" {
+// 			panic(fmt.Errorf(`AddAgent %q: input schema must have type "object"`, a.Name))
+// 		}
+// 	} else {
+// 		var m map[string]any
+// 		if err := remarshal(a.InputSchema, &m); err != nil {
+// 			panic(fmt.Errorf("AddAgent %q: can't marshal input schema to a JSON object: %v", a.Name, err))
+// 		}
+// 		if typ := m["type"]; typ != "object" {
+// 			panic(fmt.Errorf(`AddAgent %q: input schema must have type "object" (got %v)`, a.Name, typ))
+// 		}
+// 	}
+// 	if a.OutputSchema != nil {
+// 		if s, ok := a.OutputSchema.(*jsonschema.Schema); ok {
+// 			if s.Type != "object" {
+// 				panic(fmt.Errorf(`AddAgent %q: output schema must have type "object"`, a.Name))
+// 			}
+// 		} else {
+// 			var m map[string]any
+// 			if err := remarshal(a.OutputSchema, &m); err != nil {
+// 				panic(fmt.Errorf("AddAgent %q: can't marshal output schema to a JSON object: %v", a.Name, err))
+// 			}
+// 			if typ := m["type"]; typ != "object" {
+// 				panic(fmt.Errorf(`AddAgent %q: output schema must have type "object" (got %v)`, a.Name, typ))
+// 			}
+// 		}
+// 	}
+// 	ae := &serverAgent{agent: a, handler: h}
+// 	// Assume there was a change, since add replaces existing tools.
+// 	// (It's possible a tool was replaced with an identical one, but not worth checking.)
+// 	// TODO: Batch these changes by size and time? The typescript SDK doesn't.
+// 	// TODO: Surface notify error here? best not, in case we need to batch.
+// 	s.changeAndNotify(notificationAgentListChanged, &AgentListChangedParams{},
+// 		func() bool { s.agent.add(ae); return true })
+// }
 
 func toolForErr[In, Out any](t *Tool, h ToolHandlerFor[In, Out]) (*Tool, ToolHandler, error) {
 	tt := *t
@@ -385,6 +492,117 @@ func setSchema[T any](sfield *any, rfield **jsonschema.Resolved) (zero any, err 
 	return zero, err
 }
 
+func opAgentForErr[In, Out any](o *OP, h OpAgentHandlerFor[In, Out]) (*OP, OpAgentHandler, error) {
+	oo := *o
+
+	// Special handling for an "any" input: treat as an empty object.
+	if reflect.TypeFor[In]() == reflect.TypeFor[any]() && o.InputSchema == nil {
+		oo.InputSchema = &jsonschema.Schema{Type: "object"}
+	}
+
+	var inputResolved *jsonschema.Resolved
+	if _, err := setSchema[In](&oo.InputSchema, &inputResolved); err != nil {
+		return nil, nil, fmt.Errorf("input schema: %w", err)
+	}
+
+	// Handling for zero values:
+	//
+	// If Out is a pointer type and we've derived the output schema from its
+	// element type, use the zero value of its element type in place of a typed
+	// nil.
+	var (
+		elemZero       any // only non-nil if Out is a pointer type
+		outputResolved *jsonschema.Resolved
+	)
+	if o.OutputSchema != nil || reflect.TypeFor[Out]() != reflect.TypeFor[any]() {
+		var err error
+		elemZero, err = setSchema[Out](&oo.OutputSchema, &outputResolved)
+		if err != nil {
+			return nil, nil, fmt.Errorf("output schema: %v", err)
+		}
+	}
+
+	oh := func(ctx context.Context, req *OpAgentRequest) (*OpAgentResult, error) {
+		var input json.RawMessage
+		if req.Params.Messages != nil {
+			input = req.Params.Messages
+		}
+		// Validate input and apply defaults.
+		var err error
+		input, err = applySchema(input, inputResolved)
+		if err != nil {
+			return nil, fmt.Errorf("%w: validating \"arguments\": %v", jsonrpc2.ErrInvalidParams, err)
+		}
+
+		// Unmarshal and validate args.
+		var in In
+		if input != nil {
+			if err := json.Unmarshal(input, &in); err != nil {
+				return nil, fmt.Errorf("%w: %v", jsonrpc2.ErrInvalidParams, err)
+			}
+		}
+
+		// Call typed handler.
+		res, out, err := h(ctx, req, in)
+		// Handle server errors appropriately:
+		// - If the handler returns a structured error (like jsonrpc2.WireError), return it directly
+		// - If the handler returns a regular error, wrap it in a OpResult with IsError=true
+		// - This allows ops to distinguish between protocol errors and op execution errors
+		if err != nil {
+			// Check if this is already a structured JSON-RPC error
+			if wireErr, ok := err.(*jsonrpc2.WireError); ok {
+				return nil, wireErr
+			}
+			// For regular errors, embed them in the op result as per AP spec
+			var errRes OpAgentResult
+			errRes.setError(err)
+			return &errRes, nil
+		}
+
+		if res == nil {
+			res = &OpAgentResult{}
+		}
+
+		// Marshal the output and put the RawMessage in the StructuredContent field.
+		var outval any = out
+		if elemZero != nil {
+			// Avoid typed nil, which will serialize as JSON null.
+			// Instead, use the zero value of the unpointered type.
+			var z Out
+			if any(out) == any(z) { // zero is only non-nil if Out is a pointer type
+				outval = elemZero
+			}
+		}
+		if outval != nil {
+			outbytes, err := json.Marshal(outval)
+			if err != nil {
+				return nil, fmt.Errorf("marshaling output: %w", err)
+			}
+			outJSON := json.RawMessage(outbytes)
+			// Validate the output JSON, and apply defaults.
+			//
+			// We validate against the JSON, rather than the output value, as
+			// some types may have custom JSON marshalling.
+			outJSON, err = applySchema(outJSON, outputResolved)
+			if err != nil {
+				return nil, fmt.Errorf("validating op output: %w", err)
+			}
+			res.StructuredContent = outJSON // avoid a second marshal over the wire
+
+			// If the Content field isn't being used, return the serialized JSON in a
+			// TextContent block, as the spec suggests.
+			if res.Content == nil {
+				res.Content = []Content{&TextContent{
+					Text: string(outJSON),
+				}}
+			}
+		}
+		return res, nil
+	} // end of handler
+
+	return &oo, OpAgentHandler(oh), nil
+}
+
 // AddTool adds a tool and typed tool handler to the server.
 //
 // If the tool's input schema is nil, it is set to the schema inferred from the
@@ -404,7 +622,7 @@ func setSchema[T any](sfield *any, rfield **jsonschema.Resolved) (zero any, err 
 // Unlike [Server.AddTool], AddTool does a lot automatically, and forces
 // tools to conform to the MCP spec. See [ToolHandlerFor] for a detailed
 // description of this automatic behavior.
-func AddTool[In, Out any](s *Server, t *Tool, h ToolHandlerFor[In, Out]) {
+func AddTool[In, Out any](s *Agent, t *Tool, h ToolHandlerFor[In, Out]) {
 	tt, hh, err := toolForErr(t, h)
 	if err != nil {
 		panic(fmt.Sprintf("AddTool: tool %q: %v", t.Name, err))
@@ -412,36 +630,62 @@ func AddTool[In, Out any](s *Server, t *Tool, h ToolHandlerFor[In, Out]) {
 	s.AddTool(tt, hh)
 }
 
+// AddOp adds an op and typed op handler to the agent.
+//
+// If the op's input schema is nil, it is set to the schema inferred from the
+// In type parameter. Types are inferred from Go types, and property
+// descriptions are read from the 'jsonschema' struct tag. Internally, the SDK
+// uses the github.com/google/jsonschema-go package for inference and
+// validation. The In type argument must be a map or a struct, so that its
+// inferred JSON Schema has type "object", as required by the spec. As a
+// special case, if the In type is 'any', the op's input schema is set to an
+// empty object schema value.
+//
+// Similarly, if the op's output schema is nil, it is set to the schema
+// inferred from the Out type parameter. If Out is 'any', no output schema is
+// set (which is typical, since most ops don't require structured output).
+//
+// AddOp panics if there is a problem with the input or output schema.
+// Handlers should not be generic, as MCP expects that a given op name always
+// corresponds to the same input and output schemas.
+func AddOp[In, Out any](a *Agent, o *OP, h OpAgentHandlerFor[In, Out]) {
+	oo, hh, err := opAgentForErr(o, h)
+	if err != nil {
+		panic(fmt.Sprintf("AddOp: op %q: %v", o.Name, err))
+	}
+	a.AddOp(oo, hh)
+}
+
 // RemoveTools removes the tools with the given names.
 // It is not an error to remove a nonexistent tool.
-func (s *Server) RemoveTools(names ...string) {
+func (s *Agent) RemoveTools(names ...string) {
 	s.changeAndNotify(notificationToolListChanged, &ToolListChangedParams{},
 		func() bool { return s.tools.remove(names...) })
 }
 
 // AddResource adds a [Resource] to the server, or replaces one with the same URI.
 // AddResource panics if the resource URI is invalid or not absolute (has an empty scheme).
-func (s *Server) AddResource(r *Resource, h ResourceHandler) {
+func (s *Agent) AddResource(r *Resource, h ResourceHandler) {
 	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
 		func() bool {
 			if _, err := url.Parse(r.URI); err != nil {
 				panic(err) // url.Parse includes the URI in the error
 			}
-			s.resources.add(&serverResource{r, h})
+			s.resources.add(&agentResource{r, h})
 			return true
 		})
 }
 
 // RemoveResources removes the resources with the given URIs.
 // It is not an error to remove a nonexistent resource.
-func (s *Server) RemoveResources(uris ...string) {
+func (s *Agent) RemoveResources(uris ...string) {
 	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
 		func() bool { return s.resources.remove(uris...) })
 }
 
 // AddResourceTemplate adds a [ResourceTemplate] to the server, or replaces one with the same URI.
 // AddResourceTemplate panics if a URI template is invalid or not absolute (has an empty scheme).
-func (s *Server) AddResourceTemplate(t *ResourceTemplate, h ResourceHandler) {
+func (s *Agent) AddResourceTemplate(t *ResourceTemplate, h ResourceHandler) {
 	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
 		func() bool {
 			// Validate the URI template syntax
@@ -449,23 +693,23 @@ func (s *Server) AddResourceTemplate(t *ResourceTemplate, h ResourceHandler) {
 			if err != nil {
 				panic(fmt.Errorf("URI template %q is invalid: %w", t.URITemplate, err))
 			}
-			s.resourceTemplates.add(&serverResourceTemplate{t, h})
+			s.resourceTemplates.add(&agentResourceTemplate{t, h})
 			return true
 		})
 }
 
 // RemoveResourceTemplates removes the resource templates with the given URI templates.
 // It is not an error to remove a nonexistent resource.
-func (s *Server) RemoveResourceTemplates(uriTemplates ...string) {
+func (s *Agent) RemoveResourceTemplates(uriTemplates ...string) {
 	s.changeAndNotify(notificationResourceListChanged, &ResourceListChangedParams{},
 		func() bool { return s.resourceTemplates.remove(uriTemplates...) })
 }
 
-func (s *Server) capabilities() *ServerCapabilities {
+func (s *Agent) capabilities() *AgentCapabilities {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	caps := &ServerCapabilities{
+	caps := &AgentCapabilities{
 		Logging: &LoggingCapabilities{},
 	}
 	if s.opts.HasTools || s.tools.len() > 0 {
@@ -486,7 +730,7 @@ func (s *Server) capabilities() *ServerCapabilities {
 	return caps
 }
 
-func (s *Server) complete(ctx context.Context, req *CompleteRequest) (*CompleteResult, error) {
+func (s *Agent) complete(ctx context.Context, req *CompleteRequest) (*CompleteResult, error) {
 	if s.opts.CompletionHandler == nil {
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
@@ -496,8 +740,8 @@ func (s *Server) complete(ctx context.Context, req *CompleteRequest) (*CompleteR
 // changeAndNotify is called when a feature is added or removed.
 // It calls change, which should do the work and report whether a change actually occurred.
 // If there was a change, it notifies a snapshot of the sessions.
-func (s *Server) changeAndNotify(notification string, params Params, change func() bool) {
-	var sessions []*ServerSession
+func (s *Agent) changeAndNotify(notification string, params Params, change func() bool) {
+	var sessions []*AgentSession
 	// Lock for the change, but not for the notification.
 	s.mu.Lock()
 	if change() {
@@ -507,24 +751,24 @@ func (s *Server) changeAndNotify(notification string, params Params, change func
 	notifySessions(sessions, notification, params)
 }
 
-// Sessions returns an iterator that yields the current set of server sessions.
+// Sessions returns an iterator that yields the current set of agent sessions.
 //
 // There is no guarantee that the iterator observes sessions that are added or
 // removed during iteration.
-func (s *Server) Sessions() iter.Seq[*ServerSession] {
+func (s *Agent) Sessions() iter.Seq[*AgentSession] {
 	s.mu.Lock()
-	clients := slices.Clone(s.sessions)
+	agents := slices.Clone(s.sessions)
 	s.mu.Unlock()
-	return slices.Values(clients)
+	return slices.Values(agents)
 }
 
-func (s *Server) listPrompts(_ context.Context, req *ListPromptsRequest) (*ListPromptsResult, error) {
+func (s *Agent) listPrompts(_ context.Context, req *ListPromptsRequest) (*ListPromptsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if req.Params == nil {
 		req.Params = &ListPromptsParams{}
 	}
-	return paginateList(s.prompts, s.opts.PageSize, req.Params, &ListPromptsResult{}, func(res *ListPromptsResult, prompts []*serverPrompt) {
+	return paginateList(s.prompts, s.opts.PageSize, req.Params, &ListPromptsResult{}, func(res *ListPromptsResult, prompts []*agentPrompt) {
 		res.Prompts = []*Prompt{} // avoid JSON null
 		for _, p := range prompts {
 			res.Prompts = append(res.Prompts, p.prompt)
@@ -532,7 +776,7 @@ func (s *Server) listPrompts(_ context.Context, req *ListPromptsRequest) (*ListP
 	})
 }
 
-func (s *Server) getPrompt(ctx context.Context, req *GetPromptRequest) (*GetPromptResult, error) {
+func (s *Agent) getPrompt(ctx context.Context, req *GetPromptRequest) (*GetPromptResult, error) {
 	s.mu.Lock()
 	prompt, ok := s.prompts.get(req.Params.Name)
 	s.mu.Unlock()
@@ -546,13 +790,13 @@ func (s *Server) getPrompt(ctx context.Context, req *GetPromptRequest) (*GetProm
 	return prompt.handler(ctx, req)
 }
 
-func (s *Server) listTools(_ context.Context, req *ListToolsRequest) (*ListToolsResult, error) {
+func (s *Agent) listTools(_ context.Context, req *ListToolsRequest) (*ListToolsResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if req.Params == nil {
 		req.Params = &ListToolsParams{}
 	}
-	return paginateList(s.tools, s.opts.PageSize, req.Params, &ListToolsResult{}, func(res *ListToolsResult, tools []*serverTool) {
+	return paginateList(s.tools, s.opts.PageSize, req.Params, &ListToolsResult{}, func(res *ListToolsResult, tools []*agentTool) {
 		res.Tools = []*Tool{} // avoid JSON null
 		for _, t := range tools {
 			res.Tools = append(res.Tools, t.tool)
@@ -560,7 +804,26 @@ func (s *Server) listTools(_ context.Context, req *ListToolsRequest) (*ListTools
 	})
 }
 
-func (s *Server) callTool(ctx context.Context, req *CallToolRequest) (*CallToolResult, error) {
+func (s *Agent) opAgent(ctx context.Context, req *OpAgentRequest) (*OpAgentResult, error) {
+	s.mu.Lock()
+	st, ok := s.ops.get(req.Params.Op.String())
+	s.mu.Unlock()
+	if !ok {
+		return nil, &jsonrpc2.WireError{
+			Code:    codeInvalidParams,
+			Message: fmt.Sprintf("unknown op %q", req.Params.Op.String()),
+		}
+	}
+	res, err := st.handler(ctx, req)
+	if err == nil && res != nil && res.Content == nil {
+		res2 := *res
+		res2.Content = []Content{} // avoid "null"
+		res = &res2
+	}
+	return res, err
+}
+
+func (s *Agent) callTool(ctx context.Context, req *CallToolRequest) (*CallToolResult, error) {
 	s.mu.Lock()
 	st, ok := s.tools.get(req.Params.Name)
 	s.mu.Unlock()
@@ -579,13 +842,13 @@ func (s *Server) callTool(ctx context.Context, req *CallToolRequest) (*CallToolR
 	return res, err
 }
 
-func (s *Server) listResources(_ context.Context, req *ListResourcesRequest) (*ListResourcesResult, error) {
+func (s *Agent) listResources(_ context.Context, req *ListResourcesRequest) (*ListResourcesResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if req.Params == nil {
 		req.Params = &ListResourcesParams{}
 	}
-	return paginateList(s.resources, s.opts.PageSize, req.Params, &ListResourcesResult{}, func(res *ListResourcesResult, resources []*serverResource) {
+	return paginateList(s.resources, s.opts.PageSize, req.Params, &ListResourcesResult{}, func(res *ListResourcesResult, resources []*agentResource) {
 		res.Resources = []*Resource{} // avoid JSON null
 		for _, r := range resources {
 			res.Resources = append(res.Resources, r.resource)
@@ -593,14 +856,14 @@ func (s *Server) listResources(_ context.Context, req *ListResourcesRequest) (*L
 	})
 }
 
-func (s *Server) listResourceTemplates(_ context.Context, req *ListResourceTemplatesRequest) (*ListResourceTemplatesResult, error) {
+func (s *Agent) listResourceTemplates(_ context.Context, req *ListResourceTemplatesRequest) (*ListResourceTemplatesResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if req.Params == nil {
 		req.Params = &ListResourceTemplatesParams{}
 	}
 	return paginateList(s.resourceTemplates, s.opts.PageSize, req.Params, &ListResourceTemplatesResult{},
-		func(res *ListResourceTemplatesResult, rts []*serverResourceTemplate) {
+		func(res *ListResourceTemplatesResult, rts []*agentResourceTemplate) {
 			res.ResourceTemplates = []*ResourceTemplate{} // avoid JSON null
 			for _, rt := range rts {
 				res.ResourceTemplates = append(res.ResourceTemplates, rt.resourceTemplate)
@@ -608,7 +871,7 @@ func (s *Server) listResourceTemplates(_ context.Context, req *ListResourceTempl
 		})
 }
 
-func (s *Server) readResource(ctx context.Context, req *ReadResourceRequest) (*ReadResourceResult, error) {
+func (s *Agent) readResource(ctx context.Context, req *ReadResourceRequest) (*ReadResourceResult, error) {
 	uri := req.Params.URI
 	// Look up the resource URI in the lists of resources and resource templates.
 	// This is a security check as well as an information lookup.
@@ -639,7 +902,7 @@ func (s *Server) readResource(ctx context.Context, req *ReadResourceRequest) (*R
 
 // lookupResourceHandler returns the resource handler and MIME type for the resource or
 // resource template matching uri. If none, the last return value is false.
-func (s *Server) lookupResourceHandler(uri string) (ResourceHandler, string, bool) {
+func (s *Agent) lookupResourceHandler(uri string) (ResourceHandler, string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Try resources first.
@@ -699,7 +962,7 @@ func fileResourceHandler(dir string) ResourceHandler {
 // ResourceUpdated sends a notification to all clients that have subscribed to the
 // resource specified in params. This method is the primary way for a
 // server author to signal that a resource has changed.
-func (s *Server) ResourceUpdated(ctx context.Context, params *ResourceUpdatedNotificationParams) error {
+func (s *Agent) ResourceUpdated(ctx context.Context, params *ResourceUpdatedNotificationParams) error {
 	s.mu.Lock()
 	subscribedSessions := s.resourceSubscriptions[params.URI]
 	sessions := slices.Collect(maps.Keys(subscribedSessions))
@@ -709,7 +972,7 @@ func (s *Server) ResourceUpdated(ctx context.Context, params *ResourceUpdatedNot
 	return nil
 }
 
-func (s *Server) subscribe(ctx context.Context, req *SubscribeRequest) (*emptyResult, error) {
+func (s *Agent) subscribe(ctx context.Context, req *SubscribeRequest) (*emptyResult, error) {
 	if s.opts.SubscribeHandler == nil {
 		return nil, fmt.Errorf("%w: server does not support resource subscriptions", jsonrpc2.ErrMethodNotFound)
 	}
@@ -720,7 +983,7 @@ func (s *Server) subscribe(ctx context.Context, req *SubscribeRequest) (*emptyRe
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.resourceSubscriptions[req.Params.URI] == nil {
-		s.resourceSubscriptions[req.Params.URI] = make(map[*ServerSession]bool)
+		s.resourceSubscriptions[req.Params.URI] = make(map[*AgentSession]bool)
 	}
 	s.resourceSubscriptions[req.Params.URI][req.Session] = true
 	s.opts.Logger.Info("resource subscribed", "uri", req.Params.URI, "session_id", req.Session.ID())
@@ -728,7 +991,7 @@ func (s *Server) subscribe(ctx context.Context, req *SubscribeRequest) (*emptyRe
 	return &emptyResult{}, nil
 }
 
-func (s *Server) unsubscribe(ctx context.Context, req *UnsubscribeRequest) (*emptyResult, error) {
+func (s *Agent) unsubscribe(ctx context.Context, req *UnsubscribeRequest) (*emptyResult, error) {
 	if s.opts.UnsubscribeHandler == nil {
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
@@ -763,7 +1026,7 @@ func (s *Server) unsubscribe(ctx context.Context, req *UnsubscribeRequest) (*emp
 // Run is a convenience for servers that handle a single session (or one session at a time).
 // It need not be called on servers that are used for multiple concurrent connections,
 // as with [StreamableHTTPHandler].
-func (s *Server) Run(ctx context.Context, t Transport) error {
+func (s *Agent) Run(ctx context.Context, t Transport) error {
 	s.opts.Logger.Info("server run start")
 	ss, err := s.Connect(ctx, t, nil)
 	if err != nil {
@@ -794,25 +1057,25 @@ func (s *Server) Run(ctx context.Context, t Transport) error {
 
 // bind implements the binder[*ServerSession] interface, so that Servers can
 // be connected using [connect].
-func (s *Server) bind(mcpConn Connection, conn *jsonrpc2.Connection, state *ServerSessionState, onClose func()) *ServerSession {
+func (s *Agent) bind(mcpConn Connection, conn *jsonrpc2.Connection, state *AgentSessionState, onClose func()) *AgentSession {
 	assert(mcpConn != nil && conn != nil, "nil connection")
-	ss := &ServerSession{conn: conn, mcpConn: mcpConn, server: s, onClose: onClose}
+	as := &AgentSession{conn: conn, mcpConn: mcpConn, agent: s, onClose: onClose}
 	if state != nil {
-		ss.state = *state
+		as.state = *state
 	}
 	s.mu.Lock()
-	s.sessions = append(s.sessions, ss)
+	s.sessions = append(s.sessions, as)
 	s.mu.Unlock()
-	s.opts.Logger.Info("server session connected", "session_id", ss.ID())
-	return ss
+	s.opts.Logger.Info("agent session connected", "session_id", as.ID())
+	return as
 }
 
-// disconnect implements the binder[*ServerSession] interface, so that
-// Servers can be connected using [connect].
-func (s *Server) disconnect(cc *ServerSession) {
+// disconnect implements the binder[*AgentSession] interface, so that
+// Agents can be connected using [connect].
+func (s *Agent) disconnect(cc *AgentSession) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sessions = slices.DeleteFunc(s.sessions, func(cc2 *ServerSession) bool {
+	s.sessions = slices.DeleteFunc(s.sessions, func(cc2 *AgentSession) bool {
 		return cc2 == cc
 	})
 
@@ -822,9 +1085,9 @@ func (s *Server) disconnect(cc *ServerSession) {
 	s.opts.Logger.Info("server session disconnected", "session_id", cc.ID())
 }
 
-// ServerSessionOptions configures the server session.
-type ServerSessionOptions struct {
-	State *ServerSessionState
+// AgentSessionOptions configures the agent session.
+type AgentSessionOptions struct {
+	State *AgentSessionState
 
 	onClose func() // used to clean up associated resources
 }
@@ -837,32 +1100,32 @@ type ServerSessionOptions struct {
 // [Connection.Wait]).
 //
 // If opts.State is non-nil, it is the initial state for the server.
-func (s *Server) Connect(ctx context.Context, t Transport, opts *ServerSessionOptions) (*ServerSession, error) {
-	var state *ServerSessionState
+func (s *Agent) Connect(ctx context.Context, t Transport, opts *AgentSessionOptions) (*AgentSession, error) {
+	var state *AgentSessionState
 	var onClose func()
 	if opts != nil {
 		state = opts.State
 		onClose = opts.onClose
 	}
 
-	s.opts.Logger.Info("server connecting")
-	ss, err := connect(ctx, t, s, state, onClose)
+	s.opts.Logger.Info("agent connecting")
+	as, err := connect(ctx, t, s, state, onClose)
 	if err != nil {
-		s.opts.Logger.Error("server connect error", "error", err)
+		s.opts.Logger.Error("agent connect error", "error", err)
 		return nil, err
 	}
-	return ss, nil
+	return as, nil
 }
 
-// TODO: (nit) move all ServerSession methods below the ServerSession declaration.
-func (ss *ServerSession) initialized(ctx context.Context, params *InitializedParams) (Result, error) {
+// TODO: (nit) move all AgentSession methods below the AgentSession declaration.
+func (ss *AgentSession) initialized(ctx context.Context, params *InitializedParams) (Result, error) {
 	if params == nil {
 		// Since we use nilness to signal 'initialized' state, we must ensure that
 		// params are non-nil.
 		params = new(InitializedParams)
 	}
 	var wasInit, wasInitd bool
-	ss.updateState(func(state *ServerSessionState) {
+	ss.updateState(func(state *AgentSessionState) {
 		wasInit = state.InitializeParams != nil
 		wasInitd = state.InitializedParams != nil
 		if wasInit && !wasInitd {
@@ -871,47 +1134,47 @@ func (ss *ServerSession) initialized(ctx context.Context, params *InitializedPar
 	})
 
 	if !wasInit {
-		ss.server.opts.Logger.Error("initialized before initialize")
+		ss.agent.opts.Logger.Error("initialized before initialize")
 		return nil, fmt.Errorf("%q before %q", notificationInitialized, methodInitialize)
 	}
 	if wasInitd {
-		ss.server.opts.Logger.Error("duplicate initialized notification")
+		ss.agent.opts.Logger.Error("duplicate initialized notification")
 		return nil, fmt.Errorf("duplicate %q received", notificationInitialized)
 	}
-	if ss.server.opts.KeepAlive > 0 {
-		ss.startKeepalive(ss.server.opts.KeepAlive)
+	if ss.agent.opts.KeepAlive > 0 {
+		ss.startKeepalive(ss.agent.opts.KeepAlive)
 	}
-	if h := ss.server.opts.InitializedHandler; h != nil {
-		h(ctx, serverRequestFor(ss, params))
+	if h := ss.agent.opts.InitializedHandler; h != nil {
+		h(ctx, agentRequestFor(ss, params))
 	}
-	ss.server.opts.Logger.Info("session initialized")
+	ss.agent.opts.Logger.Info("session initialized")
 	return nil, nil
 }
 
-func (s *Server) callRootsListChangedHandler(ctx context.Context, req *RootsListChangedRequest) (Result, error) {
+func (s *Agent) callRootsListChangedHandler(ctx context.Context, req *RootsListChangedRequest) (Result, error) {
 	if h := s.opts.RootsListChangedHandler; h != nil {
 		h(ctx, req)
 	}
 	return nil, nil
 }
 
-func (ss *ServerSession) callProgressNotificationHandler(ctx context.Context, p *ProgressNotificationParams) (Result, error) {
-	if h := ss.server.opts.ProgressNotificationHandler; h != nil {
-		h(ctx, serverRequestFor(ss, p))
+func (ss *AgentSession) callProgressNotificationHandler(ctx context.Context, p *ProgressNotificationParams) (Result, error) {
+	if h := ss.agent.opts.ProgressNotificationHandler; h != nil {
+		h(ctx, agentRequestFor(ss, p))
 	}
 	return nil, nil
 }
 
-// NotifyProgress sends a progress notification from the server to the client
+// NotifyProgress sends a progress notification from the agent to the client
 // associated with this session.
 // This is typically used to report on the status of a long-running request
 // that was initiated by the client.
-func (ss *ServerSession) NotifyProgress(ctx context.Context, params *ProgressNotificationParams) error {
-	return handleNotify(ctx, notificationProgress, newServerRequest(ss, orZero[Params](params)))
+func (ss *AgentSession) NotifyProgress(ctx context.Context, params *ProgressNotificationParams) error {
+	return handleNotify(ctx, notificationProgress, newAgentRequest(ss, orZero[Params](params)))
 }
 
-func newServerRequest[P Params](ss *ServerSession, params P) *ServerRequest[P] {
-	return &ServerRequest[P]{Session: ss, Params: params}
+func newAgentRequest[P Params](ss *AgentSession, params P) *AgentRequest[P] {
+	return &AgentRequest[P]{Session: ss, Params: params}
 }
 
 // A ServerSession is a logical connection from a single MCP client. Its
@@ -920,48 +1183,48 @@ func newServerRequest[P Params](ss *ServerSession, params P) *ServerRequest[P] {
 //
 // Call [ServerSession.Close] to close the connection, or await client
 // termination with [ServerSession.Wait].
-type ServerSession struct {
+type AgentSession struct {
 	// Ensure that onClose is called at most once.
 	// We defensively use an atomic CompareAndSwap rather than a sync.Once, in case the
 	// onClose callback triggers a re-entrant call to Close.
 	calledOnClose atomic.Bool
 	onClose       func()
 
-	server          *Server
+	agent           *Agent
 	conn            *jsonrpc2.Connection
 	mcpConn         Connection
 	keepaliveCancel context.CancelFunc // TODO: theory around why keepaliveCancel need not be guarded
 
 	mu    sync.Mutex
-	state ServerSessionState
+	state AgentSessionState
 }
 
-func (ss *ServerSession) updateState(mut func(*ServerSessionState)) {
+func (ss *AgentSession) updateState(mut func(*AgentSessionState)) {
 	ss.mu.Lock()
 	mut(&ss.state)
 	copy := ss.state
 	ss.mu.Unlock()
-	if c, ok := ss.mcpConn.(serverConnection); ok {
+	if c, ok := ss.mcpConn.(agentConnection); ok {
 		c.sessionUpdated(copy)
 	}
 }
 
-// hasInitialized reports whether the server has received the initialized
+// hasInitialized reports whether the agent has received the initialized
 // notification.
 //
 // TODO(findleyr): use this to prevent change notifications.
-func (ss *ServerSession) hasInitialized() bool {
+func (ss *AgentSession) hasInitialized() bool {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	return ss.state.InitializedParams != nil
 }
 
-// checkInitialized returns a formatted error if the server has not yet
+// checkInitialized returns a formatted error if the agent has not yet
 // received the initialized notification.
-func (ss *ServerSession) checkInitialized(method string) error {
+func (ss *AgentSession) checkInitialized(method string) error {
 	if !ss.hasInitialized() {
 		// TODO(rfindley): enable this check.
-		// Right now is is flaky, because server tests don't await the initialized notification.
+		// Right now is is flaky, because agent tests don't await the initialized notification.
 		// Perhaps requests should simply block until they have received the initialized notification
 
 		// if strings.HasPrefix(method, "notifications/") {
@@ -973,7 +1236,7 @@ func (ss *ServerSession) checkInitialized(method string) error {
 	return nil
 }
 
-func (ss *ServerSession) ID() string {
+func (ss *AgentSession) ID() string {
 	if c, ok := ss.mcpConn.(hasSessionID); ok {
 		return c.SessionID()
 	}
@@ -981,21 +1244,21 @@ func (ss *ServerSession) ID() string {
 }
 
 // Ping pings the client.
-func (ss *ServerSession) Ping(ctx context.Context, params *PingParams) error {
-	_, err := handleSend[*emptyResult](ctx, methodPing, newServerRequest(ss, orZero[Params](params)))
+func (ss *AgentSession) Ping(ctx context.Context, params *PingParams) error {
+	_, err := handleSend[*emptyResult](ctx, methodPing, newAgentRequest(ss, orZero[Params](params)))
 	return err
 }
 
 // ListRoots lists the client roots.
-func (ss *ServerSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
+func (ss *AgentSession) ListRoots(ctx context.Context, params *ListRootsParams) (*ListRootsResult, error) {
 	if err := ss.checkInitialized(methodListRoots); err != nil {
 		return nil, err
 	}
-	return handleSend[*ListRootsResult](ctx, methodListRoots, newServerRequest(ss, orZero[Params](params)))
+	return handleSend[*ListRootsResult](ctx, methodListRoots, newAgentRequest(ss, orZero[Params](params)))
 }
 
 // CreateMessage sends a sampling request to the client.
-func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessageParams) (*CreateMessageResult, error) {
+func (ss *AgentSession) CreateMessage(ctx context.Context, params *CreateMessageParams) (*CreateMessageResult, error) {
 	if err := ss.checkInitialized(methodCreateMessage); err != nil {
 		return nil, err
 	}
@@ -1007,21 +1270,36 @@ func (ss *ServerSession) CreateMessage(ctx context.Context, params *CreateMessag
 		p2.Messages = []*SamplingMessage{} // avoid JSON "null"
 		params = &p2
 	}
-	return handleSend[*CreateMessageResult](ctx, methodCreateMessage, newServerRequest(ss, orZero[Params](params)))
+	return handleSend[*CreateMessageResult](ctx, methodCreateMessage, newAgentRequest(ss, orZero[Params](params)))
+}
+
+func (ss *AgentSession) OpHost(ctx context.Context, params *OpHostParams) (*OpHostResult, error) {
+	if err := ss.checkInitialized(methodOpHost); err != nil {
+		return nil, err
+	}
+	if params == nil {
+		params = &OpHostParams{Messages: nil}
+	}
+	if params.Messages == nil {
+		p2 := *params
+		p2.Messages = nil // avoid JSON "null"
+		params = &p2
+	}
+	return handleSend[*OpHostResult](ctx, methodOpHost, newAgentRequest(ss, orZero[Params](params)))
 }
 
 // Elicit sends an elicitation request to the client asking for user input.
-func (ss *ServerSession) Elicit(ctx context.Context, params *ElicitParams) (*ElicitResult, error) {
+func (ss *AgentSession) Elicit(ctx context.Context, params *ElicitParams) (*ElicitResult, error) {
 	if err := ss.checkInitialized(methodElicit); err != nil {
 		return nil, err
 	}
-	return handleSend[*ElicitResult](ctx, methodElicit, newServerRequest(ss, orZero[Params](params)))
+	return handleSend[*ElicitResult](ctx, methodElicit, newAgentRequest(ss, orZero[Params](params)))
 }
 
 // Log sends a log message to the client.
 // The message is not sent if the client has not called SetLevel, or if its level
 // is below that of the last SetLevel.
-func (ss *ServerSession) Log(ctx context.Context, params *LoggingMessageParams) error {
+func (ss *AgentSession) Log(ctx context.Context, params *LoggingMessageParams) error {
 	ss.mu.Lock()
 	logLevel := ss.state.LogLevel
 	ss.mu.Unlock()
@@ -1034,7 +1312,7 @@ func (ss *ServerSession) Log(ctx context.Context, params *LoggingMessageParams) 
 	if compareLevels(params.Level, logLevel) < 0 {
 		return nil
 	}
-	return handleNotify(ctx, notificationLoggingMessage, newServerRequest(ss, orZero[Params](params)))
+	return handleNotify(ctx, notificationLoggingMessage, newAgentRequest(ss, orZero[Params](params)))
 }
 
 // AddSendingMiddleware wraps the current sending method handler using the provided
@@ -1046,7 +1324,7 @@ func (ss *ServerSession) Log(ctx context.Context, params *LoggingMessageParams) 
 //
 // Sending middleware is called when a request is sent. It is useful for tasks
 // such as tracing, metrics, and adding progress tokens.
-func (s *Server) AddSendingMiddleware(middleware ...Middleware) {
+func (s *Agent) AddSendingMiddleware(middleware ...Middleware) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	addMiddleware(&s.sendingMethodHandler_, middleware)
@@ -1061,60 +1339,61 @@ func (s *Server) AddSendingMiddleware(middleware ...Middleware) {
 //
 // Receiving middleware is called when a request is received. It is useful for tasks
 // such as authentication, request logging and metrics.
-func (s *Server) AddReceivingMiddleware(middleware ...Middleware) {
+func (s *Agent) AddReceivingMiddleware(middleware ...Middleware) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	addMiddleware(&s.receivingMethodHandler_, middleware)
 }
 
-// serverMethodInfos maps from the RPC method name to serverMethodInfos.
+// agentMethodInfos maps from the RPC method name to agentMethodInfos.
 //
 // The 'allowMissingParams' values are extracted from the protocol schema.
 // TODO(rfindley): actually load and validate the protocol schema, rather than
 // curating these method flags.
-var serverMethodInfos = map[string]methodInfo{
-	methodComplete:               newServerMethodInfo(serverMethod((*Server).complete), 0),
-	methodInitialize:             newServerMethodInfo(serverSessionMethod((*ServerSession).initialize), 0),
-	methodPing:                   newServerMethodInfo(serverSessionMethod((*ServerSession).ping), missingParamsOK),
-	methodListPrompts:            newServerMethodInfo(serverMethod((*Server).listPrompts), missingParamsOK),
-	methodGetPrompt:              newServerMethodInfo(serverMethod((*Server).getPrompt), 0),
-	methodListTools:              newServerMethodInfo(serverMethod((*Server).listTools), missingParamsOK),
-	methodCallTool:               newServerMethodInfo(serverMethod((*Server).callTool), 0),
-	methodListResources:          newServerMethodInfo(serverMethod((*Server).listResources), missingParamsOK),
-	methodListResourceTemplates:  newServerMethodInfo(serverMethod((*Server).listResourceTemplates), missingParamsOK),
-	methodReadResource:           newServerMethodInfo(serverMethod((*Server).readResource), 0),
-	methodSetLevel:               newServerMethodInfo(serverSessionMethod((*ServerSession).setLevel), 0),
-	methodSubscribe:              newServerMethodInfo(serverMethod((*Server).subscribe), 0),
-	methodUnsubscribe:            newServerMethodInfo(serverMethod((*Server).unsubscribe), 0),
-	notificationCancelled:        newServerMethodInfo(serverSessionMethod((*ServerSession).cancel), notification|missingParamsOK),
-	notificationInitialized:      newServerMethodInfo(serverSessionMethod((*ServerSession).initialized), notification|missingParamsOK),
-	notificationRootsListChanged: newServerMethodInfo(serverMethod((*Server).callRootsListChangedHandler), notification|missingParamsOK),
-	notificationProgress:         newServerMethodInfo(serverSessionMethod((*ServerSession).callProgressNotificationHandler), notification),
+var agentMethodInfos = map[string]methodInfo{
+	methodComplete:               newAgentMethodInfo(agentMethod((*Agent).complete), 0),
+	methodInitialize:             newAgentMethodInfo(agentSessionMethod((*AgentSession).initialize), 0),
+	methodPing:                   newAgentMethodInfo(agentSessionMethod((*AgentSession).ping), missingParamsOK),
+	methodListPrompts:            newAgentMethodInfo(agentMethod((*Agent).listPrompts), missingParamsOK),
+	methodGetPrompt:              newAgentMethodInfo(agentMethod((*Agent).getPrompt), 0),
+	methodListTools:              newAgentMethodInfo(agentMethod((*Agent).listTools), missingParamsOK),
+	methodCallTool:               newAgentMethodInfo(agentMethod((*Agent).callTool), 0),
+	methodOpAgent:                newAgentMethodInfo(agentMethod((*Agent).opAgent), 0),
+	methodListResources:          newAgentMethodInfo(agentMethod((*Agent).listResources), missingParamsOK),
+	methodListResourceTemplates:  newAgentMethodInfo(agentMethod((*Agent).listResourceTemplates), missingParamsOK),
+	methodReadResource:           newAgentMethodInfo(agentMethod((*Agent).readResource), 0),
+	methodSetLevel:               newAgentMethodInfo(agentSessionMethod((*AgentSession).setLevel), 0),
+	methodSubscribe:              newAgentMethodInfo(agentMethod((*Agent).subscribe), 0),
+	methodUnsubscribe:            newAgentMethodInfo(agentMethod((*Agent).unsubscribe), 0),
+	notificationCancelled:        newAgentMethodInfo(agentSessionMethod((*AgentSession).cancel), notification|missingParamsOK),
+	notificationInitialized:      newAgentMethodInfo(agentSessionMethod((*AgentSession).initialized), notification|missingParamsOK),
+	notificationRootsListChanged: newAgentMethodInfo(agentMethod((*Agent).callRootsListChangedHandler), notification|missingParamsOK),
+	notificationProgress:         newAgentMethodInfo(agentSessionMethod((*AgentSession).callProgressNotificationHandler), notification),
 }
 
-func (ss *ServerSession) sendingMethodInfos() map[string]methodInfo { return clientMethodInfos }
+func (ss *AgentSession) sendingMethodInfos() map[string]methodInfo { return clientMethodInfos }
 
-func (ss *ServerSession) receivingMethodInfos() map[string]methodInfo { return serverMethodInfos }
+func (ss *AgentSession) receivingMethodInfos() map[string]methodInfo { return agentMethodInfos }
 
-func (ss *ServerSession) sendingMethodHandler() MethodHandler {
-	s := ss.server
+func (ss *AgentSession) sendingMethodHandler() MethodHandler {
+	s := ss.agent
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.sendingMethodHandler_
 }
 
-func (ss *ServerSession) receivingMethodHandler() MethodHandler {
-	s := ss.server
+func (ss *AgentSession) receivingMethodHandler() MethodHandler {
+	s := ss.agent
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.receivingMethodHandler_
 }
 
 // getConn implements [session.getConn].
-func (ss *ServerSession) getConn() *jsonrpc2.Connection { return ss.conn }
+func (ss *AgentSession) getConn() *jsonrpc2.Connection { return ss.conn }
 
 // handle invokes the method described by the given JSON RPC request.
-func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc.Request) (any, error) {
+func (ss *AgentSession) handle(ctx context.Context, req *jsonrpc.Request) (any, error) {
 	ss.mu.Lock()
 	initialized := ss.state.InitializeParams != nil
 	ss.mu.Unlock()
@@ -1126,7 +1405,7 @@ func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc.Request) (any,
 	case methodInitialize, methodPing, notificationInitialized:
 	default:
 		if !initialized {
-			ss.server.opts.Logger.Error("method invalid during initialization", "method", req.Method)
+			ss.agent.opts.Logger.Error("method invalid during initialization", "method", req.Method)
 			return nil, fmt.Errorf("method %q is invalid during session initialization", req.Method)
 		}
 	}
@@ -1147,32 +1426,32 @@ func (ss *ServerSession) handle(ctx context.Context, req *jsonrpc.Request) (any,
 
 // InitializeParams returns the InitializeParams provided during the client's
 // initial connection.
-func (ss *ServerSession) InitializeParams() *InitializeParams {
+func (ss *AgentSession) InitializeParams() *InitializeParams {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	return ss.state.InitializeParams
 }
 
-func (ss *ServerSession) initialize(ctx context.Context, params *InitializeParams) (*InitializeResult, error) {
+func (ss *AgentSession) initialize(ctx context.Context, params *InitializeParams) (*InitializeResult, error) {
 	if params == nil {
 		return nil, fmt.Errorf("%w: \"params\" must be be provided", jsonrpc2.ErrInvalidParams)
 	}
-	ss.updateState(func(state *ServerSessionState) {
+	ss.updateState(func(state *AgentSessionState) {
 		state.InitializeParams = params
 	})
 
-	s := ss.server
+	s := ss.agent
 	return &InitializeResult{
 		// TODO(rfindley): alter behavior when falling back to an older version:
 		// reject unsupported features.
 		ProtocolVersion: negotiatedVersion(params.ProtocolVersion),
 		Capabilities:    s.capabilities(),
 		Instructions:    s.opts.Instructions,
-		ServerInfo:      s.impl,
+		AgentInfo:       s.impl,
 	}, nil
 }
 
-func (ss *ServerSession) ping(context.Context, *PingParams) (*emptyResult, error) {
+func (ss *AgentSession) ping(context.Context, *PingParams) (*emptyResult, error) {
 	return &emptyResult{}, nil
 }
 
@@ -1181,15 +1460,15 @@ func (ss *ServerSession) ping(context.Context, *PingParams) (*emptyResult, error
 // It should never be invoked in practice because cancellation is preempted,
 // but having its signature here facilitates the construction of methodInfo
 // that can be used to validate incoming cancellation notifications.
-func (ss *ServerSession) cancel(context.Context, *CancelledParams) (Result, error) {
+func (ss *AgentSession) cancel(context.Context, *CancelledParams) (Result, error) {
 	return nil, nil
 }
 
-func (ss *ServerSession) setLevel(_ context.Context, params *SetLoggingLevelParams) (*emptyResult, error) {
-	ss.updateState(func(state *ServerSessionState) {
+func (ss *AgentSession) setLevel(_ context.Context, params *SetLoggingLevelParams) (*emptyResult, error) {
+	ss.updateState(func(state *AgentSessionState) {
 		state.LogLevel = params.Level
 	})
-	ss.server.opts.Logger.Info("client log level set", "level", params.Level)
+	ss.agent.opts.Logger.Info("client log level set", "level", params.Level)
 	return &emptyResult{}, nil
 }
 
@@ -1198,7 +1477,7 @@ func (ss *ServerSession) setLevel(_ context.Context, params *SetLoggingLevelPara
 // Close then terminates the connection.
 //
 // Close is idempotent and concurrency safe.
-func (ss *ServerSession) Close() error {
+func (ss *AgentSession) Close() error {
 	if ss.keepaliveCancel != nil {
 		// Note: keepaliveCancel access is safe without a mutex because:
 		// 1. keepaliveCancel is only written once during startKeepalive (happens-before all Close calls)
@@ -1217,12 +1496,12 @@ func (ss *ServerSession) Close() error {
 }
 
 // Wait waits for the connection to be closed by the client.
-func (ss *ServerSession) Wait() error {
+func (ss *AgentSession) Wait() error {
 	return ss.conn.Wait()
 }
 
 // startKeepalive starts the keepalive mechanism for this server session.
-func (ss *ServerSession) startKeepalive(interval time.Duration) {
+func (ss *AgentSession) startKeepalive(interval time.Duration) {
 	startKeepalive(ss, interval, &ss.keepaliveCancel)
 }
 

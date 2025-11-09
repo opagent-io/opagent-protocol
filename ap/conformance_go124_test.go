@@ -4,7 +4,7 @@
 
 //go:build go1.24 && goexperiment.synctest
 
-package ap_test
+package ap
 
 import (
 	"testing"

@@ -8,7 +8,7 @@
 // NOTE: The contentFromWire function has been fixed to handle nil wire.Content
 // gracefully by returning an error instead of panicking.
 
-package ap_test
+package ap
 
 import (
 	"encoding/json"

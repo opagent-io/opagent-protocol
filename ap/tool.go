@@ -26,6 +26,8 @@ import (
 // contrast, [ToolHandlerFor] automatically populates [CallToolResult.IsError]
 // and [CallToolResult.Content] accordingly.
 type ToolHandler func(context.Context, *CallToolRequest) (*CallToolResult, error)
+type OpAgentHandler func(context.Context, *OpAgentRequest) (*OpAgentResult, error)
+type OpHostHandler func(context.Context, *OpHostRequest) (*OpHostResult, error)
 
 // A ToolHandlerFor handles a call to tools/call with typed arguments and results.
 //
@@ -54,10 +56,24 @@ type ToolHandler func(context.Context, *CallToolRequest) (*CallToolResult, error
 // or error. The effective result will be populated as described above.
 type ToolHandlerFor[In, Out any] func(_ context.Context, request *CallToolRequest, input In) (result *CallToolResult, output Out, _ error)
 
-// A serverTool is a tool definition that is bound to a tool handler.
-type serverTool struct {
+type OpAgentHandlerFor[In, Out any] func(_ context.Context, request *OpAgentRequest, input In) (result *OpAgentResult, output Out, _ error)
+
+type OpHostHandlerFor[In, Out any] func(_ context.Context, request *OpHostRequest, input In) (result *OpHostResult, output Out, _ error)
+
+// A agentTool is a tool definition that is bound to a tool handler.
+type agentTool struct {
 	tool    *Tool
 	handler ToolHandler
+}
+
+type opAgentOps struct {
+	op      *OP
+	handler OpAgentHandler
+}
+
+type opHostOps struct {
+	op      *OP
+	handler OpHostHandler
 }
 
 // applySchema validates whether data is valid JSON according to the provided

@@ -31,9 +31,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/opagent-io/agent-protocol/auth"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 func TestStreamableTransports(t *testing.T) {

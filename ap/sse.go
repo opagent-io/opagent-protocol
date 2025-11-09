@@ -13,8 +13,8 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 // This file implements support for SSE (HTTP with server-sent events)
@@ -42,9 +42,9 @@ import (
 //
 // [2024-11-05 version]: https://modelcontextprotocol.io/specification/2024-11-05/basic/transports
 type SSEHandler struct {
-	getServer    func(request *http.Request) *Server
+	getServer    func(request *http.Request) *Agent
 	opts         SSEOptions
-	onConnection func(*ServerSession) // for testing; must not block
+	onConnection func(*AgentSession) // for testing; must not block
 
 	mu       sync.Mutex
 	sessions map[string]*SSEServerTransport
@@ -68,7 +68,7 @@ type SSEOptions struct{}
 // The getServer function may return a distinct [Server] for each new
 // request, or reuse an existing server. If it returns nil, the handler
 // will return a 400 Bad Request.
-func NewSSEHandler(getServer func(request *http.Request) *Server, opts *SSEOptions) *SSEHandler {
+func NewSSEHandler(getServer func(request *http.Request) *Agent, opts *SSEOptions) *SSEHandler {
 	s := &SSEHandler{
 		getServer: getServer,
 		sessions:  make(map[string]*SSEServerTransport),
@@ -146,7 +146,7 @@ func (t *SSEServerTransport) ServeHTTP(w http.ResponseWriter, req *http.Request)
 		return
 	}
 	if req, ok := msg.(*jsonrpc.Request); ok {
-		if _, err := checkRequest(req, serverMethodInfos); err != nil {
+		if _, err := checkRequest(req, agentMethodInfos); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

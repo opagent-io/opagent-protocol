@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/auth"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/auth"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 const (
@@ -218,7 +218,7 @@ type methodInfo struct {
 // A typedMethodHandler is like a MethodHandler, but with type information.
 type (
 	typedClientMethodHandler[P Params, R Result] func(context.Context, *ClientRequest[P]) (R, error)
-	typedServerMethodHandler[P Params, R Result] func(context.Context, *ServerRequest[P]) (R, error)
+	typedAgentMethodHandler[P Params, R Result]  func(context.Context, *AgentRequest[P]) (R, error)
 )
 
 type paramsPtr[T any] interface {
@@ -248,17 +248,17 @@ func newClientMethodInfo[P paramsPtr[T], R Result, T any](d typedClientMethodHan
 	return mi
 }
 
-func newServerMethodInfo[P paramsPtr[T], R Result, T any](d typedServerMethodHandler[P, R], flags methodFlags) methodInfo {
+func newAgentMethodInfo[P paramsPtr[T], R Result, T any](d typedAgentMethodHandler[P, R], flags methodFlags) methodInfo {
 	mi := newMethodInfo[P, R](flags)
 	mi.newRequest = func(s Session, p Params, re *RequestExtra) Request {
-		r := &ServerRequest[P]{Session: s.(*ServerSession), Extra: re}
+		r := &AgentRequest[P]{Session: s.(*AgentSession), Extra: re}
 		if p != nil {
 			r.Params = p.(P)
 		}
 		return r
 	}
 	mi.handleMethod = MethodHandler(func(ctx context.Context, _ string, req Request) (Result, error) {
-		return d(ctx, req.(*ServerRequest[P]))
+		return d(ctx, req.(*AgentRequest[P]))
 	})
 	return mi
 }
@@ -298,11 +298,11 @@ func newMethodInfo[P paramsPtr[T], R Result, T any](flags methodFlags) methodInf
 }
 
 // serverMethod is glue for creating a typedMethodHandler from a method on Server.
-func serverMethod[P Params, R Result](
-	f func(*Server, context.Context, *ServerRequest[P]) (R, error),
-) typedServerMethodHandler[P, R] {
-	return func(ctx context.Context, req *ServerRequest[P]) (R, error) {
-		return f(req.Session.server, ctx, req)
+func agentMethod[P Params, R Result](
+	f func(*Agent, context.Context, *AgentRequest[P]) (R, error),
+) typedAgentMethodHandler[P, R] {
+	return func(ctx context.Context, req *AgentRequest[P]) (R, error) {
+		return f(req.Session.agent, ctx, req)
 	}
 }
 
@@ -316,9 +316,9 @@ func clientMethod[P Params, R Result](
 }
 
 // serverSessionMethod is glue for creating a typedServerMethodHandler from a method on ServerSession.
-func serverSessionMethod[P Params, R Result](f func(*ServerSession, context.Context, P) (R, error)) typedServerMethodHandler[P, R] {
-	return func(ctx context.Context, req *ServerRequest[P]) (R, error) {
-		return f(req.GetSession().(*ServerSession), ctx, req.Params)
+func agentSessionMethod[P Params, R Result](f func(*AgentSession, context.Context, P) (R, error)) typedAgentMethodHandler[P, R] {
+	return func(ctx context.Context, req *AgentRequest[P]) (R, error) {
+		return f(req.GetSession().(*AgentSession), ctx, req.Params)
 	}
 }
 
@@ -363,8 +363,8 @@ func newRequest[S Session, P Params](s S, p P) Request {
 	switch s := any(s).(type) {
 	case *ClientSession:
 		return &ClientRequest[P]{Session: s, Params: p}
-	case *ServerSession:
-		return &ServerRequest[P]{Session: s, Params: p}
+	case *AgentSession:
+		return &AgentRequest[P]{Session: s, Params: p}
 	default:
 		panic("bad session")
 	}
@@ -416,8 +416,8 @@ type ClientRequest[P Params] struct {
 }
 
 // A ServerRequest is a request to a server.
-type ServerRequest[P Params] struct {
-	Session *ServerSession
+type AgentRequest[P Params] struct {
+	Session *AgentSession
 	Params  P
 	Extra   *RequestExtra
 }
@@ -430,19 +430,19 @@ type RequestExtra struct {
 }
 
 func (*ClientRequest[P]) isRequest() {}
-func (*ServerRequest[P]) isRequest() {}
+func (*AgentRequest[P]) isRequest()  {}
 
 func (r *ClientRequest[P]) GetSession() Session { return r.Session }
-func (r *ServerRequest[P]) GetSession() Session { return r.Session }
+func (r *AgentRequest[P]) GetSession() Session  { return r.Session }
 
 func (r *ClientRequest[P]) GetParams() Params { return r.Params }
-func (r *ServerRequest[P]) GetParams() Params { return r.Params }
+func (r *AgentRequest[P]) GetParams() Params  { return r.Params }
 
 func (r *ClientRequest[P]) GetExtra() *RequestExtra { return nil }
-func (r *ServerRequest[P]) GetExtra() *RequestExtra { return r.Extra }
+func (r *AgentRequest[P]) GetExtra() *RequestExtra  { return r.Extra }
 
-func serverRequestFor[P Params](s *ServerSession, p P) *ServerRequest[P] {
-	return &ServerRequest[P]{Session: s, Params: p}
+func agentRequestFor[P Params](s *AgentSession, p P) *AgentRequest[P] {
+	return &AgentRequest[P]{Session: s, Params: p}
 }
 
 func clientRequestFor[P Params](s *ClientSession, p P) *ClientRequest[P] {

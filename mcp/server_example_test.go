@@ -11,7 +11,7 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opagent-io/agent-protocol/mcp"
 )
 
 // !+prompts

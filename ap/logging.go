@@ -78,7 +78,7 @@ type LoggingHandlerOptions struct {
 // A LoggingHandler is a [slog.Handler] for MCP.
 type LoggingHandler struct {
 	opts LoggingHandlerOptions
-	ss   *ServerSession
+	ss   *AgentSession
 	// Ensures that the buffer reset is atomic with the write (see Handle).
 	// A pointer so that clones share the mutex. See
 	// https://github.com/golang/example/blob/master/slog-handler-guide/README.md#getting-the-mutex-right.
@@ -107,7 +107,7 @@ func ensureLogger(l *slog.Logger) *slog.Logger {
 
 // NewLoggingHandler creates a [LoggingHandler] that logs to the given [ServerSession] using a
 // [slog.JSONHandler].
-func NewLoggingHandler(ss *ServerSession, opts *LoggingHandlerOptions) *LoggingHandler {
+func NewLoggingHandler(ss *AgentSession, opts *LoggingHandlerOptions) *LoggingHandler {
 	var buf bytes.Buffer
 	jsonHandler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
@@ -130,7 +130,7 @@ func NewLoggingHandler(ss *ServerSession, opts *LoggingHandlerOptions) *LoggingH
 	return lh
 }
 
-// Enabled implements [slog.Handler.Enabled] by comparing level to the [ServerSession]'s level.
+// Enabled implements [slog.Handler.Enabled] by comparing level to the [AgentSession]'s level.
 func (h *LoggingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	// This is also checked in ServerSession.LoggingMessage, so checking it here
 	// is just an optimization that skips building the JSON.
@@ -155,7 +155,7 @@ func (h *LoggingHandler) WithGroup(name string) slog.Handler {
 }
 
 // Handle implements [slog.Handler.Handle] by writing the Record to a JSONHandler,
-// then calling [ServerSession.LoggingMessage] with the result.
+// then calling [AgentSession.LoggingMessage] with the result.
 func (h *LoggingHandler) Handle(ctx context.Context, r slog.Record) error {
 	err := h.handle(ctx, r)
 	// TODO(jba): find a way to surface the error.

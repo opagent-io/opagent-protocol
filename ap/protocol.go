@@ -15,6 +15,10 @@ import (
 	"fmt"
 )
 
+const (
+	UserInputName = "user_input"
+)
+
 // Optional annotations for the client. The client can use annotations to inform
 // how objects are used or displayed.
 type Annotations struct {
@@ -37,6 +41,76 @@ type Annotations struct {
 	// data is entirely optional.
 	Priority float64 `json:"priority,omitempty"`
 }
+
+type OpAgentParamsRaw struct {
+	// Meta is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta `json:"_meta,omitempty"`
+	// Op is the operation code.
+	Op OpCode `json:"op"`
+	// Name is the name of the op to call.
+	Name string `json:"name"`
+	// Arguments holds the op arguments. It can hold any value that can be
+	// marshaled to JSON.
+	Messages json.RawMessage `json:"messages,omitempty"`
+}
+
+func (x *OpAgentParamsRaw) isParams() {}
+
+type OpAgentParams struct {
+	Op       OpCode `json:"op"`
+	Meta     `json:"_meta,omitempty"`
+	Name     string `json:"name"`
+	Messages any    `json:"messages"`
+}
+
+type OpAgentResult struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta `json:"_meta,omitempty"`
+
+	// A list of content objects that represent the unstructured result of the agent
+	// call.
+	//
+	// When using a [ToolHandlerFor] with structured output, if Content is unset
+	// it will be populated with JSON text content corresponding to the
+	// structured output value.
+	Content []Content `json:"content"`
+
+	// StructuredContent is an optional value that represents the structured
+	// result of the tool call. It must marshal to a JSON object.
+	//
+	// When using a [ToolHandlerFor] with structured output, you should not
+	// populate this field. It will be automatically populated with the typed Out
+	// value.
+	StructuredContent any `json:"structuredContent,omitempty"`
+
+	// IsError reports whether the tool call ended in an error.
+	//
+	// If not set, this is assumed to be false (the call was successful).
+	//
+	// Any errors that originate from the tool should be reported inside the
+	// Content field, with IsError set to true, not as an MCP protocol-level
+	// error response. Otherwise, the LLM would not be able to see that an error
+	// occurred and self-correct.
+	//
+	// However, any errors in finding the tool, an error indicating that the
+	// server does not support tool calls, or any other exceptional conditions,
+	// should be reported as an MCP error response.
+	//
+	// When using a [ToolHandlerFor], this field is automatically set when the
+	// tool handler returns an error, and the error string is included as text in
+	// the Content field.
+	IsError bool `json:"isError,omitempty"`
+
+	// The error passed to setError, if any.
+	// It is not marshaled, and therefore it is only visible on the server.
+	// Its only use is in server sending middleware, where it can be accessed
+	// with getError.
+	err error
+}
+
+func (*OpAgentResult) isResult() {}
 
 // CallToolParams is used by clients to call a tool.
 type CallToolParams struct {
@@ -124,6 +198,12 @@ func (r *CallToolResult) setError(err error) {
 	r.err = err
 }
 
+func (r *OpAgentResult) setError(err error) {
+	r.Content = []Content{&TextContent{Text: err.Error()}}
+	r.IsError = true
+	r.err = err
+}
+
 // getError returns the error set with setError, or nil if none.
 // This function always returns nil on clients.
 func (r *CallToolResult) getError() error {
@@ -150,6 +230,10 @@ func (x *CallToolResult) UnmarshalJSON(data []byte) error {
 	*x = CallToolResult(wire.res)
 	return nil
 }
+
+func (x *OpAgentParams) isParams()              {}
+func (x *OpAgentParams) GetProgressToken() any  { return getProgressToken(x) }
+func (x *OpAgentParams) SetProgressToken(t any) { setProgressToken(x, t) }
 
 func (x *CallToolParams) isParams()              {}
 func (x *CallToolParams) GetProgressToken() any  { return getProgressToken(x) }
@@ -309,6 +393,122 @@ type CreateMessageParams struct {
 	Temperature  float64 `json:"temperature,omitempty"`
 }
 
+type OP struct {
+	// See [specification/2025-06-18/basic/index#general-fields] for notes on _meta
+	// usage.
+	Code OpCode `json:"Code"`
+	Meta `json:"_meta,omitempty"`
+	// Optional additional tool information.
+	//
+	// Display name precedence order is: title, annotations.title, then name.
+	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+	// A human-readable description of the tool.
+	//
+	// This can be used by clients to improve the LLM's understanding of available
+	// tools. It can be thought of like a "hint" to the model.
+	Description string `json:"description,omitempty"`
+	// InputSchema holds a JSON Schema object defining the expected parameters
+	// for the tool.
+	//
+	// From the server, this field may be set to any value that JSON-marshals to
+	// valid JSON schema (including json.RawMessage). However, for tools added
+	// using [AddTool], which automatically validates inputs and outputs, the
+	// schema must be in a draft the SDK understands. Currently, the SDK uses
+	// github.com/google/jsonschema-go for inference and validation, which only
+	// supports the 2020-12 draft of JSON schema. To do your own validation, use
+	// [Server.AddTool].
+	//
+	// From the client, this field will hold the default JSON marshaling of the
+	// server's input schema (a map[string]any).
+	InputSchema any `json:"inputSchema"`
+	// Intended for programmatic or logical use, but used as a display name in past
+	// specs or fallback (if title isn't present).
+	Name string `json:"name"`
+	// OutputSchema holds an optional JSON Schema object defining the structure
+	// of the tool's output returned in the StructuredContent field of a
+	// CallToolResult.
+	//
+	// From the server, this field may be set to any value that JSON-marshals to
+	// valid JSON schema (including json.RawMessage). However, for tools added
+	// using [AddTool], which automatically validates inputs and outputs, the
+	// schema must be in a draft the SDK understands. Currently, the SDK uses
+	// github.com/google/jsonschema-go for inference and validation, which only
+	// supports the 2020-12 draft of JSON schema. To do your own validation, use
+	// [Server.AddTool].
+	//
+	// From the client, this field will hold the default JSON marshaling of the
+	// server's output schema (a map[string]any).
+	OutputSchema any `json:"outputSchema,omitempty"`
+	// Intended for UI and end-user contexts — optimized to be human-readable and
+	// easily understood, even by those unfamiliar with domain-specific terminology.
+	// If not provided, Annotations.Title should be used for display if present,
+	// otherwise Name.
+	Title string `json:"title,omitempty"`
+}
+
+type OpMessage interface {
+	isOpMessage()
+}
+
+type OpHostParams struct {
+	Code OpCode `json:"code"`
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta `json:"_meta,omitempty"`
+	// A request to include context from one or more MCP servers (including the
+	// caller), to be attached to the prompt. The client may ignore this request.
+	IncludeContext string `json:"includeContext,omitempty"`
+	InputSchema    any    `json:"inputSchema"`
+	// The maximum number of tokens to sample, as requested by the server. The
+	// client may choose to sample fewer tokens than requested.
+	MaxTokens int64           `json:"maxTokens,omitempty"`
+	Messages  json.RawMessage `json:"messages"`
+	// Optional metadata to pass through to the LLM provider. The format of this
+	// metadata is provider-specific.
+	Metadata any `json:"metadata,omitempty"`
+	// The server's preferences for which model to select. The client may ignore
+	// these preferences.
+	OutputSchema     any               `json:"outputSchema,omitempty"`
+	ModelPreferences *ModelPreferences `json:"modelPreferences,omitempty"`
+	StopSequences    []string          `json:"stopSequences,omitempty"`
+	// An optional system prompt the server wants to use for sampling. The client
+	// may modify or omit this prompt.
+	SystemPrompt string  `json:"systemPrompt,omitempty"`
+	Temperature  float64 `json:"temperature,omitempty"`
+}
+
+func (x *OpHostParams) isParams() {}
+
+// func (p *OpHostParams) UnmarshalJSON(data []byte) error {
+// 	type params OpHostParams // avoid recursion
+// 	var wire struct {
+// 		params
+// 		Messages json.RawMessage `json:"messages"`
+// 	}
+// 	if err := json.Unmarshal(data, &wire); err != nil {
+// 		return err
+// 	}
+
+// 	// Copy all fields except Messages
+// 	*p = OpHostParams(wire.params)
+
+// 	// Unmarshal Messages based on Code
+// 	if wire.Messages != nil {
+// 		switch p.Code {
+// 		case OP_host_callAgent:
+// 			var msg OP_host_callAgent_Message
+// 			if err := json.Unmarshal(wire.Messages, &msg); err != nil {
+// 				return fmt.Errorf("unmarshaling OP_host_callAgent_Message: %w", err)
+// 			}
+// 			p.Messages = &msg
+// 		default:
+// 			return fmt.Errorf("unknown OpCode: %s", p.Code.String())
+// 		}
+// 	}
+
+// 	return nil
+// }
+
 func (x *CreateMessageParams) isParams()              {}
 func (x *CreateMessageParams) GetProgressToken() any  { return getProgressToken(x) }
 func (x *CreateMessageParams) SetProgressToken(t any) { setProgressToken(x, t) }
@@ -329,7 +529,49 @@ type CreateMessageResult struct {
 	StopReason string `json:"stopReason,omitempty"`
 }
 
+type OpHostResult struct {
+	Meta `json:"_meta,omitempty"`
+
+	Content Content `json:"content"`
+
+	StructuredContent any `json:"structuredContent,omitempty"`
+
+	// the Content field.
+	IsError bool `json:"isError,omitempty"`
+
+	err error
+	// // This property is reserved by the protocol to allow clients and servers to
+	// // attach additional metadata to their responses.
+	// Meta    `json:"_meta,omitempty"`
+	// Content Content `json:"content"`
+	// // The name of the model that generated the message.
+	// Model string `json:"model,omitempty"`
+	// Role  Role   `json:"role,omitempty"`
+	// // The reason why sampling stopped, if known.
+	// StopReason string `json:"stopReason,omitempty"`
+}
+
+func (*OpHostResult) isResult() {}
+
+func (r *OpHostResult) UnmarshalJSON(data []byte) error {
+	type result OpHostResult // avoid recursion
+	var wire struct {
+		result
+		Content *wireContent `json:"content"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	var err error
+	if wire.result.Content, err = contentFromWire(wire.Content, map[string]bool{"text": true, "image": true, "audio": true}); err != nil {
+		return err
+	}
+	*r = OpHostResult(wire.result)
+	return nil
+}
+
 func (*CreateMessageResult) isResult() {}
+
 func (r *CreateMessageResult) UnmarshalJSON(data []byte) error {
 	type result CreateMessageResult // avoid recursion
 	var wire struct {
@@ -394,8 +636,8 @@ type InitializeResult struct {
 	// This property is reserved by the protocol to allow clients and servers to
 	// attach additional metadata to their responses.
 	Meta         `json:"_meta,omitempty"`
-	Capabilities *ServerCapabilities `json:"capabilities"`
-	// Instructions describing how to use the server and its features.
+	Capabilities *AgentCapabilities `json:"capabilities"`
+	// Instructions describing how to use the agent and its features.
 	//
 	// This can be used by clients to improve the LLM's understanding of available
 	// tools, resources, etc. It can be thought of like a "hint" to the model. For
@@ -405,7 +647,7 @@ type InitializeResult struct {
 	// may not match the version that the client requested. If the client cannot
 	// support this version, it must disconnect.
 	ProtocolVersion string          `json:"protocolVersion"`
-	ServerInfo      *Implementation `json:"serverInfo"`
+	AgentInfo       *Implementation `json:"agentInfo"`
 }
 
 func (*InitializeResult) isResult() {}
@@ -647,7 +889,7 @@ type ProgressNotificationParams struct {
 	// this notification with the request that is proceeding.
 	ProgressToken any `json:"progressToken"`
 	// An optional message describing the current progress.
-	Message string `json:"message,omitempty"`
+	Data any `json:"data,omitempty"`
 	// The progress thus far. This should increase every time progress is made, even
 	// if the total is unknown.
 	Progress float64 `json:"progress"`
@@ -864,6 +1106,8 @@ type SamplingMessage struct {
 	Role    Role    `json:"role"`
 }
 
+func (x *SamplingMessage) isOpMessage() {}
+
 // UnmarshalJSON handles the unmarshalling of content into the Content
 // interface.
 func (m *SamplingMessage) UnmarshalJSON(data []byte) error {
@@ -950,6 +1194,60 @@ type Tool struct {
 	Title string `json:"title,omitempty"`
 }
 
+// Definition for a tool the client can call.
+// type Agent struct {
+// 	Op OpCode `json:"code"`
+// 	// See [specification/2025-06-18/basic/index#general-fields] for notes on _meta
+// 	// usage.
+// 	Meta `json:"_meta,omitempty"`
+// 	// Optional additional tool information.
+// 	//
+// 	// Display name precedence order is: title, annotations.title, then name.
+// 	// Annotations *ToolAnnotations `json:"annotations,omitempty"`
+// 	// A human-readable description of the tool.
+// 	//
+// 	// This can be used by clients to improve the LLM's understanding of available
+// 	// tools. It can be thought of like a "hint" to the model.
+// 	Description string `json:"description,omitempty"`
+// 	// InputSchema holds a JSON Schema object defining the expected parameters
+// 	// for the tool.
+// 	//
+// 	// From the server, this field may be set to any value that JSON-marshals to
+// 	// valid JSON schema (including json.RawMessage). However, for tools added
+// 	// using [AddTool], which automatically validates inputs and outputs, the
+// 	// schema must be in a draft the SDK understands. Currently, the SDK uses
+// 	// github.com/google/jsonschema-go for inference and validation, which only
+// 	// supports the 2020-12 draft of JSON schema. To do your own validation, use
+// 	// [Server.AddTool].
+// 	//
+// 	// From the client, this field will hold the default JSON marshaling of the
+// 	// server's input schema (a map[string]any).
+// 	InputSchema any `json:"inputSchema"`
+// 	// Intended for programmatic or logical use, but used as a display name in past
+// 	// specs or fallback (if title isn't present).
+// 	Name string `json:"name"`
+// 	// OutputSchema holds an optional JSON Schema object defining the structure
+// 	// of the tool's output returned in the StructuredContent field of a
+// 	// CallToolResult.
+// 	//
+// 	// From the server, this field may be set to any value that JSON-marshals to
+// 	// valid JSON schema (including json.RawMessage). However, for tools added
+// 	// using [AddTool], which automatically validates inputs and outputs, the
+// 	// schema must be in a draft the SDK understands. Currently, the SDK uses
+// 	// github.com/google/jsonschema-go for inference and validation, which only
+// 	// supports the 2020-12 draft of JSON schema. To do your own validation, use
+// 	// [Server.AddTool].
+// 	//
+// 	// From the client, this field will hold the default JSON marshaling of the
+// 	// server's output schema (a map[string]any).
+// 	OutputSchema any `json:"outputSchema,omitempty"`
+// 	// Intended for UI and end-user contexts — optimized to be human-readable and
+// 	// easily understood, even by those unfamiliar with domain-specific terminology.
+// 	// If not provided, Annotations.Title should be used for display if present,
+// 	// otherwise Name.
+// 	Title string `json:"title,omitempty"`
+// }
+
 // Additional properties describing a Tool to clients.
 //
 // NOTE: all properties in ToolAnnotations are hints. They are not
@@ -996,6 +1294,16 @@ type ToolListChangedParams struct {
 func (x *ToolListChangedParams) isParams()              {}
 func (x *ToolListChangedParams) GetProgressToken() any  { return getProgressToken(x) }
 func (x *ToolListChangedParams) SetProgressToken(t any) { setProgressToken(x, t) }
+
+type OpListChangedParams struct {
+	// This property is reserved by the protocol to allow clients and servers to
+	// attach additional metadata to their responses.
+	Meta `json:"_meta,omitempty"`
+}
+
+func (x *OpListChangedParams) isParams()              {}
+func (x *OpListChangedParams) GetProgressToken() any  { return getProgressToken(x) }
+func (x *OpListChangedParams) SetProgressToken(t any) { setProgressToken(x, t) }
 
 // Sent from the client to request resources/updated notifications from the
 // server whenever a particular resource changes.
@@ -1115,7 +1423,7 @@ type ResourceCapabilities struct {
 // Capabilities that a server may support. Known capabilities are defined here,
 // in this schema, but this is not a closed set: any server can define its own,
 // additional capabilities.
-type ServerCapabilities struct {
+type AgentCapabilities struct {
 	// Present if the server supports argument autocompletion suggestions.
 	Completions *CompletionCapabilities `json:"completions,omitempty"`
 	// Experimental, non-standard capabilities that the server supports.
@@ -1138,9 +1446,12 @@ type ToolCapabilities struct {
 
 const (
 	methodCallTool                  = "tools/call"
+	methodOpAgent                   = "op/agent"
 	notificationCancelled           = "notifications/cancelled"
 	methodComplete                  = "completion/complete"
 	methodCreateMessage             = "sampling/createMessage"
+	methodOpHost                    = "op/host"
+	methodGenerateMessage           = "sampling/createMessage"
 	methodElicit                    = "elicitation/create"
 	methodGetPrompt                 = "prompts/get"
 	methodInitialize                = "initialize"
@@ -1161,5 +1472,31 @@ const (
 	methodSetLevel                  = "logging/setLevel"
 	methodSubscribe                 = "resources/subscribe"
 	notificationToolListChanged     = "notifications/tools/list_changed"
+	notificationOpListChanged       = "notifications/ops/list_changed"
 	methodUnsubscribe               = "resources/unsubscribe"
 )
+
+// getError returns the error set with setError, or nil if none.
+// This function always returns nil on clients.
+func (r *OpAgentResult) getError() error {
+	return r.err
+}
+
+// UnmarshalJSON handles the unmarshalling of content into the Content
+// interface.
+func (x *OpAgentResult) UnmarshalJSON(data []byte) error {
+	type res OpAgentResult // avoid recursion
+	var wire struct {
+		res
+		Content []*wireContent `json:"content"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	var err error
+	if wire.res.Content, err = contentsFromWire(wire.Content, nil); err != nil {
+		return err
+	}
+	*x = OpAgentResult(wire.res)
+	return nil
+}

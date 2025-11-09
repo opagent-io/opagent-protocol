@@ -21,13 +21,13 @@ import (
 )
 
 // A serverResource associates a Resource with its handler.
-type serverResource struct {
+type agentResource struct {
 	resource *Resource
 	handler  ResourceHandler
 }
 
 // A serverResourceTemplate associates a ResourceTemplate with its handler.
-type serverResourceTemplate struct {
+type agentResourceTemplate struct {
 	resourceTemplate *ResourceTemplate
 	handler          ResourceHandler
 }
@@ -155,7 +155,7 @@ func fileRoot(root *Root) (_ string, err error) {
 }
 
 // Matches reports whether the receiver's uri template matches the uri.
-func (sr *serverResourceTemplate) Matches(uri string) bool {
+func (sr *agentResourceTemplate) Matches(uri string) bool {
 	tmpl, err := uritemplate.New(sr.resourceTemplate.URITemplate)
 	if err != nil {
 		return false

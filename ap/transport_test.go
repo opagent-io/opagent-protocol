@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 )
 
 func TestBatchFraming(t *testing.T) {
@@ -103,7 +103,7 @@ func TestIOConnRead(t *testing.T) {
 			})
 			t.Cleanup(func() { tr.Close() })
 			if tt.protocolVersion != "" {
-				tr.sessionUpdated(ServerSessionState{
+				tr.sessionUpdated(AgentSessionState{
 					InitializeParams: &InitializeParams{
 						ProtocolVersion: tt.protocolVersion,
 					},

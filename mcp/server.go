@@ -25,7 +25,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
 	"github.com/opagent-io/agent-protocol/internal/util"
-	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
+	"github.com/opagent-io/agent-protocol/jsonrpc"
 	"github.com/yosida95/uritemplate/v3"
 )
 

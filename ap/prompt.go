@@ -11,7 +11,7 @@ import (
 // A PromptHandler handles a call to prompts/get.
 type PromptHandler func(context.Context, *GetPromptRequest) (*GetPromptResult, error)
 
-type serverPrompt struct {
+type agentPrompt struct {
 	prompt  *Prompt
 	handler PromptHandler
 }
