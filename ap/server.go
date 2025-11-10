@@ -444,9 +444,7 @@ func toolForErr[In, Out any](t *Tool, h ToolHandlerFor[In, Out]) (*Tool, ToolHan
 			// TextContent block, as the spec suggests:
 			// https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content.
 			if res.Content == nil {
-				res.Content = []Content{&TextContent{
-					Text: string(outJSON),
-				}}
+				res.Content = []Content{}
 			}
 		}
 		return res, nil
@@ -592,9 +590,7 @@ func opAgentForErr[In, Out any](o *OP, h OpAgentHandlerFor[In, Out]) (*OP, OpAge
 			// If the Content field isn't being used, return the serialized JSON in a
 			// TextContent block, as the spec suggests.
 			if res.Content == nil {
-				res.Content = []Content{&TextContent{
-					Text: string(outJSON),
-				}}
+				res.Content = outJSON
 			}
 		}
 		return res, nil
@@ -817,7 +813,7 @@ func (s *Agent) opAgent(ctx context.Context, req *OpAgentRequest) (*OpAgentResul
 	res, err := st.handler(ctx, req)
 	if err == nil && res != nil && res.Content == nil {
 		res2 := *res
-		res2.Content = []Content{} // avoid "null"
+		res2.Content = json.RawMessage{} // avoid "null"
 		res = &res2
 	}
 	return res, err

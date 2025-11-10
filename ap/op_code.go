@@ -13,11 +13,18 @@ const (
 	OP_host_notify
 	OP_host_agentTask
 	OP_host_callAgent
+	OP_host_agentList
 
 	//user
 	OP_host_getUserTask
 	OP_host_bindThreadID
+
+	//task
 	OP_host_userTaskCreate
+	OP_host_userTaskList
+
+	//thread
+	OP_host_threadHistory
 
 	OP_agent_callAgent
 	OP_agent_output
@@ -28,30 +35,96 @@ var OpCodeName = map[OpCode]string{
 	OP_host_notify:         "OP_host_notify",
 	OP_host_callAgent:      "OP_host_callAgent",
 	OP_host_agentTask:      "OP_host_agentTask",
+	OP_host_agentList:      "OP_host_agentList",
+	OP_host_threadHistory:  "OP_host_threadHistory",
 	OP_host_getUserTask:    "OP_host_getUserTask",
 	OP_host_bindThreadID:   "OP_host_bindThreadID",
 	OP_host_userTaskCreate: "OP_host_userTaskCreate",
+	OP_host_userTaskList:   "OP_host_userTaskList",
 	OP_agent_callAgent:     "OP_agent_callAgent",
 	OP_agent_output:        "OP_agent_output",
 }
 
 var OpCodeMap = map[string]OpCode{
-	"OP_host_started":   OP_host_started,
-	"OP_host_notify":    OP_host_notify,
-	"OP_host_callAgent": OP_host_callAgent,
-	"OP_host_agentTask": OP_host_agentTask,
+	"OP_host_started":       OP_host_started,
+	"OP_host_notify":        OP_host_notify,
+	"OP_host_callAgent":     OP_host_callAgent,
+	"OP_host_agentTask":     OP_host_agentTask,
+	"OP_host_agentList":     OP_host_agentList,
+	"OP_host_threadHistory": OP_host_threadHistory,
 
 	"OP_host_getUserTask":    OP_host_getUserTask,
 	"OP_host_bindThreadID":   OP_host_bindThreadID,
 	"OP_host_userTaskCreate": OP_host_userTaskCreate,
+	"OP_host_userTaskList":   OP_host_userTaskList,
 	"OP_agent_callAgent":     OP_agent_callAgent,
 	"OP_agent_output":        OP_agent_output,
 }
 
+type NotifyParams struct {
+	ThreadID  string `json:"threadID"`
+	Role      string `json:"role"`
+	Type      string `json:"type"`
+	Status    string `json:"status"`
+	AgentName string `json:"agentName"`
+	AgentID   string `json:"agentID"`
+	Data      any    `json:"data"`
+}
+type ModelConfig struct {
+	Name     string `json:"name"`
+	Stream   bool   `json:"stream,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	APIKey   string `json:"apiKey"`
+	Thinking bool   `json:"thinking,omitempty"`
+	Timeout  int64  `json:"timeout,omitempty"`
+	URL      string `json:"url"`
+}
+
+type MCPType string
+
+const (
+	Stdio      MCPType = "stdio"
+	HTTPStream MCPType = "httpstream"
+)
+
+type MCPServer struct {
+	Name    string   `json:"name"`
+	Type    MCPType  `json:"type"`
+	URL     string   `json:"url"`
+	Command []string `json:"command,omitempty"`
+}
+type AgentTools struct {
+	AllowedMCPServers  []string `json:"allowedMCPServers"`
+	ExcludedMCPServers []string `json:"excludedMCPServers"`
+	AllowedTools       []string `json:"allowedTools"`
+	ExcludedTools      []string `json:"excludedTools"`
+}
+
+type AgentConfig struct {
+	ID          string       `json:"id"`
+	Name        string       `json:"name"`
+	Bio         string       `json:"bio"`
+	Sysprompt   string       `json:"systemPrompt"`
+	Tags        []string     `json:"tags"`
+	ModelConfig *ModelConfig `json:"model"`
+
+	ConnType   string       `json:"connType"`
+	Command    []string     `json:"command"`
+	URL        string       `json:"url"`
+	MCPServers []*MCPServer `json:"mcpServers"`
+	Tools      *AgentTools  `json:"tools"`
+	OpCodes    []OpCode     `json:"opCodes"`
+}
+
+type UserTask struct {
+	UserID    string   `bson:"userID" json:"userID"`
+	TaskID    string   `bson:"taskID" json:"taskID"`
+	TaskName  string   `bson:"taskName" json:"taskName"`
+	ThreadIDs []string `bson:"threadIDs" json:"threadIDs"`
+}
 type ThreadMemory struct {
-	ThreadID string `json:"threadID" bson:"threadID"`
-	Name     string `json:"name" bson:"name"`
-	// History      []map[string]any `json:"history" bson:"history"`
+	ThreadID     string   `json:"threadID" bson:"threadID"`
+	Name         string   `json:"name" bson:"name"`
 	AgentTaskIDs []string `json:"agentTaskIDs" bson:"agentTaskIDs"`
 	CreatedAt    int64    `json:"createdAt" bson:"createdAt"`
 	UpdatedAt    int64    `json:"updatedAt" bson:"updatedAt"`
@@ -129,3 +202,15 @@ type OpHostUserTaskCreateMessage struct {
 }
 
 func (x *OpHostUserTaskCreateMessage) isOpMessage() {}
+
+type OpHostUserTaskListMessage struct {
+	UserID string `json:"userID"`
+}
+
+func (x *OpHostUserTaskListMessage) isOpMessage() {}
+
+type OpHostThreadHistoryMessage struct {
+	ThreadID string `json:"threadID"`
+}
+
+func (x *OpHostThreadHistoryMessage) isOpMessage() {}

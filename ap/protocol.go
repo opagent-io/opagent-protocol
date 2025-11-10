@@ -75,7 +75,7 @@ type OpAgentResult struct {
 	// When using a [ToolHandlerFor] with structured output, if Content is unset
 	// it will be populated with JSON text content corresponding to the
 	// structured output value.
-	Content []Content `json:"content"`
+	Content json.RawMessage `json:"content"`
 
 	// StructuredContent is an optional value that represents the structured
 	// result of the tool call. It must marshal to a JSON object.
@@ -199,7 +199,7 @@ func (r *CallToolResult) setError(err error) {
 }
 
 func (r *OpAgentResult) setError(err error) {
-	r.Content = []Content{&TextContent{Text: err.Error()}}
+	r.Content = json.RawMessage(err.Error())
 	r.IsError = true
 	r.err = err
 }
@@ -458,11 +458,11 @@ type OpHostParams struct {
 	// A request to include context from one or more MCP servers (including the
 	// caller), to be attached to the prompt. The client may ignore this request.
 	IncludeContext string `json:"includeContext,omitempty"`
-	InputSchema    any    `json:"inputSchema"`
+	InputSchema    any    `json:"inputSchema,omitempty"`
 	// The maximum number of tokens to sample, as requested by the server. The
 	// client may choose to sample fewer tokens than requested.
 	MaxTokens int64           `json:"maxTokens,omitempty"`
-	Messages  json.RawMessage `json:"messages"`
+	Messages  json.RawMessage `json:"messages,omitempty"`
 	// Optional metadata to pass through to the LLM provider. The format of this
 	// metadata is provider-specific.
 	Metadata any `json:"metadata,omitempty"`
@@ -521,7 +521,7 @@ type CreateMessageResult struct {
 	// This property is reserved by the protocol to allow clients and servers to
 	// attach additional metadata to their responses.
 	Meta    `json:"_meta,omitempty"`
-	Content Content `json:"content"`
+	Content json.RawMessage `json:"content"`
 	// The name of the model that generated the message.
 	Model string `json:"model"`
 	Role  Role   `json:"role"`
@@ -530,9 +530,10 @@ type CreateMessageResult struct {
 }
 
 type OpHostResult struct {
+	Type string `json:"type"`
 	Meta `json:"_meta,omitempty"`
 
-	Content Content `json:"content"`
+	Content json.RawMessage `json:"content"`
 
 	StructuredContent any `json:"structuredContent,omitempty"`
 
@@ -553,41 +554,24 @@ type OpHostResult struct {
 
 func (*OpHostResult) isResult() {}
 
-func (r *OpHostResult) UnmarshalJSON(data []byte) error {
-	type result OpHostResult // avoid recursion
-	var wire struct {
-		result
-		Content *wireContent `json:"content"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	var err error
-	if wire.result.Content, err = contentFromWire(wire.Content, map[string]bool{"text": true, "image": true, "audio": true}); err != nil {
-		return err
-	}
-	*r = OpHostResult(wire.result)
-	return nil
-}
-
 func (*CreateMessageResult) isResult() {}
 
-func (r *CreateMessageResult) UnmarshalJSON(data []byte) error {
-	type result CreateMessageResult // avoid recursion
-	var wire struct {
-		result
-		Content *wireContent `json:"content"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	var err error
-	if wire.result.Content, err = contentFromWire(wire.Content, map[string]bool{"text": true, "image": true, "audio": true}); err != nil {
-		return err
-	}
-	*r = CreateMessageResult(wire.result)
-	return nil
-}
+// func (r *CreateMessageResult) UnmarshalJSON(data []byte) error {
+// 	type result CreateMessageResult // avoid recursion
+// 	var wire struct {
+// 		result
+// 		Content *wireContent `json:"content"`
+// 	}
+// 	if err := json.Unmarshal(data, &wire); err != nil {
+// 		return err
+// 	}
+// 	var err error
+// 	if wire.result.Content, err = contentFromWire(wire.Content, map[string]bool{"text": true, "image": true, "audio": true}); err != nil {
+// 		return err
+// 	}
+// 	*r = CreateMessageResult(wire.result)
+// 	return nil
+// }
 
 type GetPromptParams struct {
 	// This property is reserved by the protocol to allow clients and servers to
@@ -887,9 +871,11 @@ type ProgressNotificationParams struct {
 	Meta `json:"_meta,omitempty"`
 	// The progress token which was given in the initial request, used to associate
 	// this notification with the request that is proceeding.
-	ProgressToken any `json:"progressToken"`
+	ProgressToken any    `json:"progressToken"`
+	Type          string `json:"type"`
+	Status        string `json:"status,omitempty"`
 	// An optional message describing the current progress.
-	Data any `json:"data,omitempty"`
+	Message json.RawMessage `json:"data,omitempty"`
 	// The progress thus far. This should increase every time progress is made, even
 	// if the total is unknown.
 	Progress float64 `json:"progress"`
@@ -1484,19 +1470,16 @@ func (r *OpAgentResult) getError() error {
 
 // UnmarshalJSON handles the unmarshalling of content into the Content
 // interface.
-func (x *OpAgentResult) UnmarshalJSON(data []byte) error {
-	type res OpAgentResult // avoid recursion
-	var wire struct {
-		res
-		Content []*wireContent `json:"content"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	var err error
-	if wire.res.Content, err = contentsFromWire(wire.Content, nil); err != nil {
-		return err
-	}
-	*x = OpAgentResult(wire.res)
-	return nil
-}
+// func (x *OpAgentResult) UnmarshalJSON(data []byte) error {
+// 	type res OpAgentResult // avoid recursion
+// 	var wire struct {
+// 		res
+// 		Content json.RawMessage `json:"content"`
+// 	}
+// 	if err := json.Unmarshal(data, &wire); err != nil {
+// 		return err
+// 	}
+// 	var err error
+// 	*x = OpAgentResult(wire.res)
+// 	return nil
+// }
