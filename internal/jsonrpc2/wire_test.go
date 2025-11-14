@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
 )
 
 func TestWireMessage(t *testing.T) {

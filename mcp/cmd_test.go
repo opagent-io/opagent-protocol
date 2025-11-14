@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/opagent-io/agent-protocol/mcp"
+	"github.com/opagent-io/opagent-protocol/mcp"
 )
 
 const runAsServer = "_MCP_RUN_AS_SERVER"

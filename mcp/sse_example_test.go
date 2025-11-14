@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/opagent-io/agent-protocol/mcp"
+	"github.com/opagent-io/opagent-protocol/mcp"
 )
 
 type AddParams struct {

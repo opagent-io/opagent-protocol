@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opagent-io/agent-protocol/auth"
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/opagent-io/agent-protocol/jsonrpc"
+	"github.com/opagent-io/opagent-protocol/auth"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/jsonrpc"
 )
 
 const (

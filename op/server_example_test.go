@@ -11,7 +11,7 @@ import (
 	"log/slog"
 	"sync/atomic"
 
-	"github.com/opagent-io/agent-protocol/mcp"
+	"github.com/opagent-io/opagent-protocol/mcp"
 )
 
 // !+prompts

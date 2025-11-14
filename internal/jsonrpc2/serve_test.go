@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
 )
 
 // needsLocalhostNet skips t if networking does not work for ports opened

@@ -15,8 +15,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/opagent-io/agent-protocol/jsonrpc"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/jsonrpc"
 )
 
 type streamableRequestKey struct {

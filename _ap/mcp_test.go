@@ -24,7 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
 )
 
 type hiParams struct {

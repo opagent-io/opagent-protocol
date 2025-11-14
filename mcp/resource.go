@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/opagent-io/agent-protocol/internal/util"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/internal/util"
 	"github.com/yosida95/uritemplate/v3"
 )
 

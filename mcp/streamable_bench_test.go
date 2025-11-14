@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/opagent-io/agent-protocol/mcp"
+	"github.com/opagent-io/opagent-protocol/mcp"
 )
 
 func BenchmarkStreamableServing(b *testing.B) {

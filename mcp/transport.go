@@ -15,9 +15,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/opagent-io/agent-protocol/internal/xcontext"
-	"github.com/opagent-io/agent-protocol/jsonrpc"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/internal/xcontext"
+	"github.com/opagent-io/opagent-protocol/jsonrpc"
 )
 
 // ErrConnectionClosed is returned when sending a message to a connection that

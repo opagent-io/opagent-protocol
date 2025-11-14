@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
 )
 
 func TestApplySchema(t *testing.T) {

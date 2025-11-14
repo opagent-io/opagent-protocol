@@ -1192,7 +1192,9 @@ const (
 	notificationCancelled           = "notifications/cancelled"
 	methodComplete                  = "completion/complete"
 	methodCreateMessage             = "sampling/createMessage"
-	methodCallAgentMessage          = "agent/callMessage"
+	methodCallAgent                 = "agent/call" //call agent
+	methodGetThread                 = "thread/get" //get thread
+	methodGetUser                   = "user/get"   //get user
 	methodElicit                    = "elicitation/create"
 	methodGetPrompt                 = "prompts/get"
 	methodInitialize                = "initialize"

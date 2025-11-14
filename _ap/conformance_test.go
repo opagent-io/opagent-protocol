@@ -25,8 +25,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/opagent-io/agent-protocol/jsonrpc"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/jsonrpc"
 	"golang.org/x/tools/txtar"
 )
 

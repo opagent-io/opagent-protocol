@@ -13,7 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/opagent-io/agent-protocol/mcp"
+	"github.com/opagent-io/opagent-protocol/mcp"
 )
 
 // !+streamablehandler

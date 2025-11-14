@@ -6,7 +6,7 @@
 // for use by mcp transport authors.
 package jsonrpc
 
-import "github.com/opagent-io/agent-protocol/internal/jsonrpc2"
+import "github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
 
 type (
 	// ID is a JSON-RPC request ID.

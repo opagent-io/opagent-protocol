@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/opagent-io/agent-protocol/internal/jsonrpc2"
-	"github.com/opagent-io/agent-protocol/jsonrpc"
+	"github.com/opagent-io/opagent-protocol/internal/jsonrpc2"
+	"github.com/opagent-io/opagent-protocol/jsonrpc"
 )
 
 func TestBatchFraming(t *testing.T) {
